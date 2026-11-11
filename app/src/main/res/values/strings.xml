@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">十字光标 2R 助手</string>
-    <string name="accessibility_description">读取前台通达信的可见页面元素，仅在点击按钮时捕获十字光标价格；不使用 OCR，不截取屏幕，不联网。</string>
+    <string name="accessibility_description">仅在点击按钮时读取通达信十字光标价格。优先读取页面元素，失败时使用 Android 11 及以上的无障碍截图进行本地离线数字识别；截图不保存，应用无联网权限。</string>
 </resources>

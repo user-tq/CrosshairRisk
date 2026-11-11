@@ -1,6 +1,8 @@
 package com.crosshair.risk;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -54,7 +56,7 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content.addView(Ui.bold(this, "十字光标 2R 助手", 28, Ui.WHITE));
-        TextView subtitle = Ui.text(this, "元素捕获 · 无 OCR · 本地计算", 14, Ui.MUTED);
+        TextView subtitle = Ui.text(this, "元素 + 本地离线识别 · 无联网权限", 14, Ui.MUTED);
         content.addView(subtitle, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 6, this));
 
@@ -116,14 +118,18 @@ public final class MainActivity extends Activity {
         helpCard.addView(steps, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
 
+        Button copyDiagnostics = Ui.button(this, "复制完整诊断结果", false);
+        copyDiagnostics.setOnClickListener(view -> copyDiagnostics());
+        helpCard.addView(copyDiagnostics, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
+
         diagnostics = Ui.text(this, "暂无诊断结果", 12, Ui.MUTED);
         diagnostics.setTextIsSelectable(true);
-        diagnostics.setMaxLines(18);
         helpCard.addView(diagnostics, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
 
         TextView privacy = Ui.text(this,
-                "说明：本应用没有联网权限，不截屏，只读取可见无障碍元素。若通达信将光标画在 Canvas 上而不暴露元素，任何纯元素方案都无法读取该价格，需要针对该版本适配。",
+                "说明：优先读取页面元素；失败时，Android 11 及以上会通过无障碍截图定位左侧蓝色标签，并使用 APK 内置模型离线识别数字。截图仅在内存中处理，不保存；应用没有联网权限。请避免浮窗遮挡蓝色价格标签。",
                 12, Ui.MUTED);
         content.addView(privacy, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 20, this));
@@ -137,6 +143,17 @@ public final class MainActivity extends Activity {
                 Ui.dp(this, 18), Ui.dp(this, 18));
         card.setBackground(Ui.outlined(Ui.CARD, Color.rgb(43, 53, 62), 16, this));
         return card;
+    }
+
+    private void copyDiagnostics() {
+        String value = preferences.getString(State.KEY_DIAGNOSTICS, "");
+        if (value.isEmpty()) {
+            Toast.makeText(this, "请先在通达信十字光标页面执行诊断", Toast.LENGTH_LONG).show();
+            return;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("通达信页面元素诊断", value));
+        Toast.makeText(this, "完整诊断结果已复制", Toast.LENGTH_SHORT).show();
     }
 
     private void openAccessibilitySettings() {

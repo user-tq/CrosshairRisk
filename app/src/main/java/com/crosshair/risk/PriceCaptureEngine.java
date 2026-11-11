@@ -170,16 +170,12 @@ public final class PriceCaptureEngine {
             return "未发现可见数值节点";
         }
         StringBuilder result = new StringBuilder();
-        int limit = Math.min(candidates.size(), 20);
-        for (int index = 0; index < limit; index++) {
+        for (int index = 0; index < candidates.size(); index++) {
             Candidate candidate = candidates.get(index);
             result.append(result.length() == 0 ? "" : "\n")
                     .append(index + 1)
                     .append(". ")
                     .append(candidate.description);
-        }
-        if (candidates.size() > limit) {
-            result.append("\n… 其余 ").append(candidates.size() - limit).append(" 项省略");
         }
         return result.toString();
     }

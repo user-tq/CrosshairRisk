@@ -10,8 +10,8 @@ android {
         applicationId 'com.crosshair.risk'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode 3
+        versionName '1.1.0'
     }
 
     buildTypes {
@@ -31,5 +31,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 dependencies {
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
     testImplementation 'junit:junit:4.13.2'
 }

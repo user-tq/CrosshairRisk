@@ -2,6 +2,7 @@ package com.crosshair.risk;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -108,5 +109,18 @@ public final class PriceCaptureEngineTest {
 
         assertFalse(result.isSuccess());
         assertEquals(PriceCaptureEngine.Status.NO_PRICE, result.status);
+    }
+
+    @Test
+    public void diagnosticsIncludeValuesBeyondTheOldTwentyNodeLimit() {
+        List<PriceCaptureEngine.Node> nodes = new ArrayList<>();
+        for (int index = 0; index < 24; index++) {
+            nodes.add(PriceCaptureEngine.Node.numeric("1." + (100 + index), null));
+        }
+        nodes.add(PriceCaptureEngine.Node.numeric("4.114", null));
+
+        String diagnostics = PriceCaptureEngine.diagnostics(nodes);
+
+        assertTrue(diagnostics.contains("25. 文本=4.114"));
     }
 }

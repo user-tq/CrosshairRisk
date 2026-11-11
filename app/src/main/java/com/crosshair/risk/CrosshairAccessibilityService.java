@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -35,6 +36,8 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private TextView riskValue;
     private TextView statusValue;
     private boolean collapsed;
+    private boolean captureInFlight;
+    private OfflineScreenshotRecognizer offlineRecognizer;
     private String lastForegroundPackage = "";
 
     public static CrosshairAccessibilityService getInstance() {
@@ -120,31 +123,31 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
     private void buildOverlay() {
         LinearLayout container = Ui.vertical(this);
-        container.setPadding(Ui.dp(this, 14), Ui.dp(this, 10),
-                Ui.dp(this, 14), Ui.dp(this, 14));
-        container.setBackground(Ui.outlined(Color.rgb(20, 26, 32),
-                Color.rgb(67, 83, 91), 18, this));
-        container.setElevation(Ui.dp(this, 12));
+        container.setPadding(Ui.dp(this, 10), Ui.dp(this, 7),
+                Ui.dp(this, 10), Ui.dp(this, 9));
+        container.setBackground(Ui.outlined(Color.argb(185, 20, 26, 32),
+                Color.argb(150, 67, 83, 91), 16, this));
+        container.setElevation(Ui.dp(this, 10));
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         container.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)));
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 34)));
 
-        TextView title = Ui.bold(this, "2R 卖出价助手", 16, Ui.WHITE);
+        TextView title = Ui.bold(this, "2R 卖出价助手", 14, Ui.WHITE);
         header.addView(title, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView collapse = Ui.bold(this, collapsed ? "＋" : "—", 22, Ui.MUTED);
+        TextView collapse = Ui.bold(this, collapsed ? "＋" : "—", 20, Ui.MUTED);
         collapse.setGravity(Gravity.CENTER);
         collapse.setContentDescription(collapsed ? "展开悬浮窗" : "收起悬浮窗");
-        header.addView(collapse, new LinearLayout.LayoutParams(Ui.dp(this, 44),
+        header.addView(collapse, new LinearLayout.LayoutParams(Ui.dp(this, 36),
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        TextView close = Ui.bold(this, "×", 24, Ui.MUTED);
+        TextView close = Ui.bold(this, "×", 22, Ui.MUTED);
         close.setGravity(Gravity.CENTER);
         close.setContentDescription("隐藏悬浮窗");
-        header.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 40),
+        header.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 34),
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
         overlayBody = Ui.vertical(this);
@@ -158,10 +161,16 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
 
         Button captureStop = Ui.button(this, "捕获止损价", false);
-        buttons.addView(captureStop, new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1));
         Button captureBuy = Ui.button(this, "捕获买入价", true);
-        LinearLayout.LayoutParams buyParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1);
-        buyParams.leftMargin = Ui.dp(this, 8);
+        for (Button button : new Button[]{captureStop, captureBuy}) {
+            button.setTextSize(12);
+            button.setMinHeight(0);
+            button.setMinimumHeight(0);
+            button.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        }
+        buttons.addView(captureStop, new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1));
+        LinearLayout.LayoutParams buyParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1);
+        buyParams.leftMargin = Ui.dp(this, 6);
         buttons.addView(captureBuy, buyParams);
 
         LinearLayout prices = new LinearLayout(this);
@@ -172,48 +181,48 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         LinearLayout stopColumn = Ui.vertical(this);
         prices.addView(stopColumn, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        stopColumn.addView(Ui.text(this, "止损价", 12, Ui.MUTED));
-        stopValue = Ui.bold(this, "--", 20, Ui.WHITE);
+        stopColumn.addView(Ui.text(this, "止损价", 11, Ui.MUTED));
+        stopValue = Ui.bold(this, "--", 18, Ui.WHITE);
         stopColumn.addView(stopValue);
 
         LinearLayout buyColumn = Ui.vertical(this);
         buyColumn.setGravity(Gravity.END);
         prices.addView(buyColumn, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        buyColumn.addView(Ui.text(this, "买入价", 12, Ui.MUTED));
-        buyValue = Ui.bold(this, "--", 20, Ui.WHITE);
+        buyColumn.addView(Ui.text(this, "买入价", 11, Ui.MUTED));
+        buyValue = Ui.bold(this, "--", 18, Ui.WHITE);
         buyColumn.addView(buyValue);
 
         LinearLayout targetCard = Ui.vertical(this);
         targetCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        targetCard.setPadding(Ui.dp(this, 12), Ui.dp(this, 12),
-                Ui.dp(this, 12), Ui.dp(this, 12));
-        targetCard.setBackground(Ui.rounded(Color.rgb(25, 54, 51), 14, this));
+        targetCard.setPadding(Ui.dp(this, 8), Ui.dp(this, 8),
+                Ui.dp(this, 8), Ui.dp(this, 8));
+        targetCard.setBackground(Ui.rounded(Color.argb(190, 25, 54, 51), 12, this));
         overlayBody.addView(targetCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
-        targetCard.addView(Ui.bold(this, "2 倍盈亏比卖出价", 13, Ui.ACCENT));
-        targetValue = Ui.bold(this, "--", 34, Ui.ACCENT);
+                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
+        targetCard.addView(Ui.bold(this, "2 倍盈亏比卖出价", 12, Ui.ACCENT));
+        targetValue = Ui.bold(this, "--", 28, Ui.ACCENT);
         targetValue.setTextIsSelectable(true);
         targetCard.addView(targetValue);
-        riskValue = Ui.text(this, "等待止损价和买入价", 12, Ui.MUTED);
+        riskValue = Ui.text(this, "等待止损价和买入价", 11, Ui.MUTED);
         targetCard.addView(riskValue, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 3, this));
 
-        statusValue = Ui.text(this, "请先在通达信中调出十字光标", 12, Ui.MUTED);
+        statusValue = Ui.text(this, "请先在通达信中调出十字光标", 11, Ui.MUTED);
         statusValue.setTextIsSelectable(true);
         overlayBody.addView(statusValue, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
+                ViewGroup.LayoutParams.WRAP_CONTENT, 7, this));
 
         LinearLayout tools = new LinearLayout(this);
         tools.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         overlayBody.addView(tools, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 4, this));
-        TextView diagnose = Ui.text(this, "诊断页面", 12, Ui.ACCENT);
-        diagnose.setPadding(Ui.dp(this, 8), Ui.dp(this, 10), Ui.dp(this, 8), Ui.dp(this, 10));
+        TextView diagnose = Ui.text(this, "诊断页面", 11, Ui.ACCENT);
+        diagnose.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6));
         tools.addView(diagnose, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView clear = Ui.text(this, "清空", 12, Ui.MUTED);
-        clear.setPadding(Ui.dp(this, 12), Ui.dp(this, 10), Ui.dp(this, 4), Ui.dp(this, 10));
+        TextView clear = Ui.text(this, "清空", 11, Ui.MUTED);
+        clear.setPadding(Ui.dp(this, 10), Ui.dp(this, 6), Ui.dp(this, 2), Ui.dp(this, 6));
         tools.addView(clear, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -237,7 +246,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         });
         enableDragging(header);
 
-        int width = Math.min(Ui.dp(this, 340),
+        int width = Math.min(Ui.dp(this, 240),
                 getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 20));
         overlayParams = new WindowManager.LayoutParams(
                 width,
@@ -280,6 +289,11 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     }
 
     private void captureInto(boolean stop) {
+        if (captureInFlight) {
+            saveMessage("正在识别，请稍候");
+            renderPrices();
+            return;
+        }
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) {
             saveMessage("读取失败：未取得前台页面，请保持通达信在前台");
@@ -297,23 +311,61 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
             List<PriceCaptureEngine.Node> nodes = snapshot(root);
             PriceCaptureEngine.Result result = PriceCaptureEngine.capture(nodes);
             saveDiagnostics(packageName, nodes.size(), result.diagnostics);
-            if (!result.isSuccess()) {
-                saveMessage(result.message);
+            if (result.isSuccess()) {
+                applyCapturedPrice(stop, result.price, "页面元素");
                 renderPrices();
                 return;
             }
-            String key = stop ? State.KEY_STOP : State.KEY_BUY;
-            String label = stop ? "止损价" : "买入价";
-            preferences.edit().putString(key, result.price)
-                    .putString(State.KEY_MESSAGE,
-                            label + "已捕获 " + result.price + " · " + result.message)
-                    .apply();
+            startOfflineCapture(stop);
         } catch (RuntimeException error) {
-            saveMessage("页面元素读取异常，请重新调出十字光标后再试");
+            startOfflineCapture(stop);
         } finally {
             root.recycle();
         }
+    }
+
+    private void startOfflineCapture(boolean stop) {
+        if (Build.VERSION.SDK_INT < 30) {
+            saveMessage("元素未识别；离线截图识别需要 Android 11 及以上");
+            renderPrices();
+            return;
+        }
+        try {
+            if (offlineRecognizer == null) {
+                offlineRecognizer = new OfflineScreenshotRecognizer(this);
+            }
+        } catch (RuntimeException error) {
+            saveMessage("离线识别模型启动失败，请重新安装应用后再试");
+            renderPrices();
+            return;
+        }
+        captureInFlight = true;
+        saveMessage("正在本地离线识别蓝色标签…");
         renderPrices();
+        offlineRecognizer.capture(new OfflineScreenshotRecognizer.Callback() {
+            @Override
+            public void onPrice(String price) {
+                captureInFlight = false;
+                applyCapturedPrice(stop, price, "离线图像识别");
+                renderPrices();
+            }
+
+            @Override
+            public void onError(String message) {
+                captureInFlight = false;
+                saveMessage(message);
+                renderPrices();
+            }
+        });
+    }
+
+    private void applyCapturedPrice(boolean stop, String price, String source) {
+        String key = stop ? State.KEY_STOP : State.KEY_BUY;
+        String label = stop ? "止损价" : "买入价";
+        preferences.edit().putString(key, price)
+                .putString(State.KEY_MESSAGE,
+                        label + "已捕获 " + price + " · " + source)
+                .apply();
     }
 
     private void diagnoseCurrentPage() {
@@ -440,6 +492,11 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        captureInFlight = false;
+        if (offlineRecognizer != null) {
+            offlineRecognizer.close();
+            offlineRecognizer = null;
+        }
         removeOverlay();
         running = false;
         instance = null;
