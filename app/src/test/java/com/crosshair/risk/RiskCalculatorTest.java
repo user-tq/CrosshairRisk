@@ -13,6 +13,7 @@ public final class RiskCalculatorTest {
         assertEquals("0.018", result.risk);
         assertEquals("0.036", result.profit);
         assertEquals("0.806", result.target);
+        assertEquals("0.788", result.breakEven);
     }
 
     @Test
@@ -22,6 +23,7 @@ public final class RiskCalculatorTest {
         assertEquals("0.50", result.risk);
         assertEquals("1.00", result.profit);
         assertEquals("11.00", result.target);
+        assertEquals("10.50", result.breakEven);
     }
 
     @Test
@@ -30,6 +32,7 @@ public final class RiskCalculatorTest {
 
         assertEquals("0.020", result.risk);
         assertEquals("0.810", result.target);
+        assertEquals("0.790", result.breakEven);
     }
 
     @Test

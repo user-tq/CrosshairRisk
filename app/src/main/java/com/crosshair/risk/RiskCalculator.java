@@ -31,12 +31,14 @@ public final class RiskCalculator {
         BigDecimal risk = buy.subtract(stop);
         BigDecimal profit = risk.multiply(BigDecimal.valueOf(2));
         BigDecimal target = buy.add(profit);
+        BigDecimal breakEven = buy.add(risk);
         return new Calculation(
                 plain(stop, scale),
                 plain(buy, scale),
                 plain(risk, scale),
                 plain(profit, scale),
-                plain(target, scale)
+                plain(target, scale),
+                plain(breakEven, scale)
         );
     }
 
@@ -54,13 +56,16 @@ public final class RiskCalculator {
         public final String risk;
         public final String profit;
         public final String target;
+        public final String breakEven;
 
-        Calculation(String stop, String buy, String risk, String profit, String target) {
+        Calculation(String stop, String buy, String risk, String profit, String target,
+                    String breakEven) {
             this.stop = stop;
             this.buy = buy;
             this.risk = risk;
             this.profit = profit;
             this.target = target;
+            this.breakEven = breakEven;
         }
     }
 }

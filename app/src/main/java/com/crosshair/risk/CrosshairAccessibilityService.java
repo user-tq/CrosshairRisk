@@ -40,6 +40,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private TextView stopValue;
     private TextView buyValue;
     private TextView targetValue;
+    private TextView breakEvenValue;
     private TextView statusValue;
     private boolean collapsed;
     private boolean captureInFlight;
@@ -191,10 +192,24 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         body.addView(buyCell, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-        LinearLayout targetCell = priceCell("2R卖出", Ui.ACCENT, Ui.ACCENT, 17, holder);
-        targetValue = holder[0];
+        LinearLayout targetCell = Ui.vertical(this);
+        targetCell.setGravity(Gravity.CENTER);
+        TextView targetLabel = Ui.text(this, "2R卖出 / 1R保本", 9, Ui.ACCENT);
+        targetLabel.setGravity(Gravity.CENTER);
+        targetCell.addView(targetLabel);
+        LinearLayout targetValues = Ui.vertical(this);
+        targetValues.setGravity(Gravity.CENTER);
+        targetValue = Ui.bold(this, "--", 15, Ui.ACCENT);
+        targetValue.setGravity(Gravity.CENTER);
+        targetValue.setSingleLine(true);
+        targetValues.addView(targetValue);
+        breakEvenValue = Ui.text(this, "", 9, Ui.MUTED);
+        breakEvenValue.setGravity(Gravity.CENTER);
+        breakEvenValue.setSingleLine(true);
+        targetValues.addView(breakEvenValue);
+        targetCell.addView(targetValues);
         body.addView(targetCell, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1.2f));
+                ViewGroup.LayoutParams.MATCH_PARENT, 1.3f));
 
         Button captureStop = Ui.button(this, "捕获止损", false);
         Button captureBuy = Ui.button(this, "捕获买入", true);
@@ -616,14 +631,18 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 RiskCalculator.Calculation result = RiskCalculator.calculate(stop, buy);
                 targetValue.setText(result.target);
                 targetValue.setTextColor(Ui.ACCENT);
+                breakEvenValue.setText("保本 " + result.breakEven);
+                breakEvenValue.setTextColor(Ui.MUTED);
             } catch (IllegalArgumentException error) {
                 targetValue.setText("--");
                 targetValue.setTextColor(Ui.DANGER);
+                breakEvenValue.setText("");
                 message = error.getMessage();
             }
         } else {
             targetValue.setText("--");
             targetValue.setTextColor(Ui.ACCENT);
+            breakEvenValue.setText("");
         }
         statusValue.setText(message);
         statusValue.setTextColor(message.contains("失败") || message.contains("无法")
