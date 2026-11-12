@@ -307,7 +307,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                         return false;
                     }
                     moveOverlay(initialPosition[0] + Math.round(event.getRawX() - initialTouch[0]),
-                            initialPosition[1] + Math.round(event.getRawY() - initialTouch[1]));
+                            initialPosition[1] - Math.round(event.getRawY() - initialTouch[1]));
                     return true;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
