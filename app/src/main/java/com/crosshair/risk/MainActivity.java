@@ -111,9 +111,10 @@ public final class MainActivity extends Activity {
         TextView steps = Ui.text(this,
                 "1. 启用服务并显示悬浮窗。\n"
                         + "2. 打开通达信，长按 K 线调出十字光标。\n"
-                        + "3. 分别点击“捕获止损价”和“捕获买入价”。\n"
-                        + "4. 核对两个价格后，查看实时计算的 2R 卖出价。\n\n"
-                        + "若提示无法识别，点击悬浮窗底部“诊断”，再回本页查看元素结果。",
+                        + "3. 分别点击“捕获止损”和“捕获买入”，浮窗会同时识别股票名称和代码。\n"
+                        + "4. 核对两个价格后，查看实时计算的 2R 卖出价。\n"
+                        + "5. 点击浮窗右上角“复制”，即可得到包含股票名称、代码、止损价、买入价和买入日期的记录。\n\n"
+                        + "若提示无法识别，点击浮窗右下角“诊断”，再回本页查看元素结果。",
                 14, Ui.MUTED);
         helpCard.addView(steps, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
@@ -129,7 +130,7 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
 
         TextView privacy = Ui.text(this,
-                "说明：优先读取页面元素；失败时，Android 11 及以上会通过无障碍截图定位左侧蓝色标签，并使用 APK 内置模型离线识别数字。截图仅在内存中处理，不保存；应用没有联网权限。请避免浮窗遮挡蓝色价格标签。",
+                "说明：优先读取页面元素；失败时，Android 11 及以上会通过无障碍截图定位左侧蓝色标签和顶部股票标题，并使用 APK 内置模型离线识别价格、股票名称与代码。截图仅在内存中处理，不保存；应用没有联网权限。请避免浮窗遮挡蓝色价格标签。",
                 12, Ui.MUTED);
         content.addView(privacy, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 20, this));
@@ -203,8 +204,12 @@ public final class MainActivity extends Activity {
 
         String stop = preferences.getString(State.KEY_STOP, "");
         String buy = preferences.getString(State.KEY_BUY, "");
+        String name = preferences.getString(State.KEY_NAME, "");
+        String code = preferences.getString(State.KEY_CODE, "");
         String message = preferences.getString(State.KEY_MESSAGE, "尚未捕获完整价格");
         String packageName = preferences.getString(State.KEY_PACKAGE, "");
+        String stockLine = name.isEmpty() && code.isEmpty()
+                ? "" : name + (name.isEmpty() || code.isEmpty() ? "" : " ") + code + "\n";
         foregroundPackage.setText(packageName.isEmpty()
                 ? "前台应用：等待识别" : "最近前台包名：" + packageName);
 
@@ -213,18 +218,19 @@ public final class MainActivity extends Activity {
                 RiskCalculator.Calculation result = RiskCalculator.calculate(stop, buy);
                 quote.setText(result.target);
                 quote.setTextColor(Ui.ACCENT);
-                detail.setText("止损 " + result.stop + "  ·  买入 " + result.buy
+                detail.setText(stockLine + "止损 " + result.stop + "  ·  买入 " + result.buy
                         + "\n每股风险 " + result.risk + "  ·  2R 收益 " + result.profit
                         + "\n" + message);
             } catch (IllegalArgumentException error) {
                 quote.setText("--");
                 quote.setTextColor(Ui.DANGER);
-                detail.setText("止损 " + stop + "  ·  买入 " + buy + "\n" + error.getMessage());
+                detail.setText(stockLine + "止损 " + stop + "  ·  买入 " + buy
+                        + "\n" + error.getMessage());
             }
         } else {
             quote.setText("--");
             quote.setTextColor(Ui.ACCENT);
-            detail.setText((stop.isEmpty() ? "止损 --" : "止损 " + stop)
+            detail.setText(stockLine + (stop.isEmpty() ? "止损 --" : "止损 " + stop)
                     + "  ·  " + (buy.isEmpty() ? "买入 --" : "买入 " + buy)
                     + "\n" + message);
         }

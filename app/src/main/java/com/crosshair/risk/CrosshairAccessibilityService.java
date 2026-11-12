@@ -1,11 +1,15 @@
 package com.crosshair.risk;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Build;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -16,7 +20,9 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -30,10 +36,10 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private WindowManager.LayoutParams overlayParams;
     private View overlayView;
     private LinearLayout overlayBody;
+    private TextView stockValue;
     private TextView stopValue;
     private TextView buyValue;
     private TextView targetValue;
-    private TextView riskValue;
     private TextView statusValue;
     private boolean collapsed;
     private boolean captureInFlight;
@@ -123,31 +129,39 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
     private void buildOverlay() {
         LinearLayout container = Ui.vertical(this);
-        container.setPadding(Ui.dp(this, 10), Ui.dp(this, 7),
-                Ui.dp(this, 10), Ui.dp(this, 9));
-        container.setBackground(Ui.outlined(Color.argb(185, 20, 26, 32),
-                Color.argb(150, 67, 83, 91), 16, this));
+        container.setPadding(Ui.dp(this, 8), Ui.dp(this, 5),
+                Ui.dp(this, 8), Ui.dp(this, 5));
+        container.setBackground(Ui.outlined(Color.argb(196, 20, 26, 32),
+                Color.argb(150, 67, 83, 91), 14, this));
         container.setElevation(Ui.dp(this, 10));
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         container.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 34)));
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 28)));
 
-        TextView title = Ui.bold(this, "2R 卖出价助手", 14, Ui.WHITE);
-        header.addView(title, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        stockValue = Ui.bold(this, "股票未识别", 12, Ui.WHITE);
+        stockValue.setSingleLine(true);
+        stockValue.setEllipsize(TextUtils.TruncateAt.END);
+        header.addView(stockValue, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-        TextView collapse = Ui.bold(this, collapsed ? "＋" : "—", 20, Ui.MUTED);
+        TextView copy = Ui.text(this, "复制", 11, Ui.ACCENT);
+        copy.setGravity(Gravity.CENTER);
+        copy.setContentDescription("复制交易信息");
+        copy.setBackground(Ui.rounded(Color.argb(110, 85, 214, 190), 8, this));
+        header.addView(copy, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 24)));
+
+        TextView collapse = Ui.bold(this, collapsed ? "＋" : "－", 17, Ui.MUTED);
         collapse.setGravity(Gravity.CENTER);
         collapse.setContentDescription(collapsed ? "展开悬浮窗" : "收起悬浮窗");
-        header.addView(collapse, new LinearLayout.LayoutParams(Ui.dp(this, 36),
+        header.addView(collapse, new LinearLayout.LayoutParams(Ui.dp(this, 28),
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        TextView close = Ui.bold(this, "×", 22, Ui.MUTED);
+        TextView close = Ui.bold(this, "×", 19, Ui.MUTED);
         close.setGravity(Gravity.CENTER);
         close.setContentDescription("隐藏悬浮窗");
-        header.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 34),
+        header.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 26),
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
         overlayBody = Ui.vertical(this);
@@ -155,89 +169,81 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         overlayBody.setVisibility(collapsed ? View.GONE : View.VISIBLE);
 
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setGravity(Gravity.CENTER);
-        overlayBody.addView(buttons, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
+        LinearLayout body = new LinearLayout(this);
+        body.setGravity(Gravity.CENTER_VERTICAL);
+        overlayBody.addView(body, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 50), 4, this));
 
-        Button captureStop = Ui.button(this, "捕获止损价", false);
-        Button captureBuy = Ui.button(this, "捕获买入价", true);
+        TextView[] holder = new TextView[1];
+        LinearLayout stopCell = priceCell("止损", Ui.MUTED, Ui.WHITE, 15, holder);
+        stopValue = holder[0];
+        body.addView(stopCell, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout buyCell = priceCell("买入", Ui.MUTED, Ui.WHITE, 15, holder);
+        buyValue = holder[0];
+        body.addView(buyCell, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout targetCell = priceCell("2R卖出", Ui.ACCENT, Ui.ACCENT, 17, holder);
+        targetValue = holder[0];
+        targetValue.setTextIsSelectable(true);
+        body.addView(targetCell, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1.2f));
+
+        Button captureStop = Ui.button(this, "捕获止损", false);
+        Button captureBuy = Ui.button(this, "捕获买入", true);
         for (Button button : new Button[]{captureStop, captureBuy}) {
-            button.setTextSize(12);
+            button.setTextSize(11);
             button.setMinHeight(0);
             button.setMinimumHeight(0);
-            button.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+            button.setPadding(0, 0, 0, 0);
         }
-        buttons.addView(captureStop, new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1));
-        LinearLayout.LayoutParams buyParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1);
-        buyParams.leftMargin = Ui.dp(this, 6);
-        buttons.addView(captureBuy, buyParams);
+        LinearLayout.LayoutParams stopButtonParams = new LinearLayout.LayoutParams(
+                Ui.dp(this, 76), Ui.dp(this, 36));
+        stopButtonParams.leftMargin = Ui.dp(this, 4);
+        body.addView(captureStop, stopButtonParams);
+        LinearLayout.LayoutParams buyButtonParams = new LinearLayout.LayoutParams(
+                Ui.dp(this, 76), Ui.dp(this, 36));
+        buyButtonParams.leftMargin = Ui.dp(this, 5);
+        body.addView(captureBuy, buyButtonParams);
 
-        LinearLayout prices = new LinearLayout(this);
-        prices.setGravity(Gravity.CENTER_VERTICAL);
-        overlayBody.addView(prices, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        overlayBody.addView(footer, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 16), 2, this));
 
-        LinearLayout stopColumn = Ui.vertical(this);
-        prices.addView(stopColumn, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        stopColumn.addView(Ui.text(this, "止损价", 11, Ui.MUTED));
-        stopValue = Ui.bold(this, "--", 18, Ui.WHITE);
-        stopColumn.addView(stopValue);
+        statusValue = Ui.text(this, "请先在通达信中调出十字光标", 10, Ui.MUTED);
+        statusValue.setSingleLine(true);
+        statusValue.setEllipsize(TextUtils.TruncateAt.END);
+        footer.addView(statusValue, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-        LinearLayout buyColumn = Ui.vertical(this);
-        buyColumn.setGravity(Gravity.END);
-        prices.addView(buyColumn, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        buyColumn.addView(Ui.text(this, "买入价", 11, Ui.MUTED));
-        buyValue = Ui.bold(this, "--", 18, Ui.WHITE);
-        buyColumn.addView(buyValue);
+        TextView diagnose = Ui.text(this, "诊断", 10, Ui.ACCENT);
+        diagnose.setPadding(Ui.dp(this, 5), 0, Ui.dp(this, 5), 0);
+        footer.addView(diagnose, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        LinearLayout targetCard = Ui.vertical(this);
-        targetCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        targetCard.setPadding(Ui.dp(this, 8), Ui.dp(this, 8),
-                Ui.dp(this, 8), Ui.dp(this, 8));
-        targetCard.setBackground(Ui.rounded(Color.argb(190, 25, 54, 51), 12, this));
-        overlayBody.addView(targetCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
-        targetCard.addView(Ui.bold(this, "2 倍盈亏比卖出价", 12, Ui.ACCENT));
-        targetValue = Ui.bold(this, "--", 28, Ui.ACCENT);
-        targetValue.setTextIsSelectable(true);
-        targetCard.addView(targetValue);
-        riskValue = Ui.text(this, "等待止损价和买入价", 11, Ui.MUTED);
-        targetCard.addView(riskValue, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 3, this));
-
-        statusValue = Ui.text(this, "请先在通达信中调出十字光标", 11, Ui.MUTED);
-        statusValue.setTextIsSelectable(true);
-        overlayBody.addView(statusValue, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 7, this));
-
-        LinearLayout tools = new LinearLayout(this);
-        tools.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        overlayBody.addView(tools, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 4, this));
-        TextView diagnose = Ui.text(this, "诊断页面", 11, Ui.ACCENT);
-        diagnose.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6));
-        tools.addView(diagnose, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView clear = Ui.text(this, "清空", 11, Ui.MUTED);
-        clear.setPadding(Ui.dp(this, 10), Ui.dp(this, 6), Ui.dp(this, 2), Ui.dp(this, 6));
-        tools.addView(clear, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView clear = Ui.text(this, "清空", 10, Ui.MUTED);
+        clear.setPadding(Ui.dp(this, 5), 0, Ui.dp(this, 2), 0);
+        footer.addView(clear, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         captureStop.setOnClickListener(view -> captureInto(true));
         captureBuy.setOnClickListener(view -> captureInto(false));
+        copy.setOnClickListener(view -> copyTradeInfo());
         diagnose.setOnClickListener(view -> diagnoseCurrentPage());
         clear.setOnClickListener(view -> {
             preferences.edit().remove(State.KEY_STOP).remove(State.KEY_BUY)
-                    .putString(State.KEY_MESSAGE, "价格已清空").apply();
+                    .remove(State.KEY_NAME).remove(State.KEY_CODE)
+                    .remove(State.KEY_BUY_DATE)
+                    .putString(State.KEY_MESSAGE, "交易信息已清空").apply();
             renderPrices();
         });
         collapse.setOnClickListener(view -> {
             collapsed = !collapsed;
             overlayBody.setVisibility(collapsed ? View.GONE : View.VISIBLE);
-            collapse.setText(collapsed ? "＋" : "—");
+            collapse.setText(collapsed ? "＋" : "－");
             collapse.setContentDescription(collapsed ? "展开悬浮窗" : "收起悬浮窗");
         });
         close.setOnClickListener(view -> {
@@ -246,8 +252,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         });
         enableDragging(header);
 
-        int width = Math.min(Ui.dp(this, 240),
-                getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 20));
+        int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 12);
         overlayParams = new WindowManager.LayoutParams(
                 width,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -255,10 +260,25 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
-        overlayParams.gravity = Gravity.TOP | Gravity.START;
-        overlayParams.x = Ui.dp(this, 12);
-        overlayParams.y = Ui.dp(this, 150);
+        overlayParams.gravity = Gravity.BOTTOM | Gravity.START;
+        overlayParams.x = Ui.dp(this, 6);
+        overlayParams.y = Ui.dp(this, 12);
         overlayView = container;
+    }
+
+    private LinearLayout priceCell(String label, int labelColor, int valueColor,
+                                   float valueSize, TextView[] holder) {
+        LinearLayout cell = Ui.vertical(this);
+        cell.setGravity(Gravity.CENTER);
+        TextView labelView = Ui.text(this, label, 9, labelColor);
+        labelView.setGravity(Gravity.CENTER);
+        cell.addView(labelView);
+        TextView value = Ui.bold(this, "--", valueSize, valueColor);
+        value.setGravity(Gravity.CENTER);
+        value.setSingleLine(true);
+        holder[0] = value;
+        cell.addView(value);
+        return cell;
     }
 
     private void enableDragging(View handle) {
@@ -309,6 +329,8 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 return;
             }
             List<PriceCaptureEngine.Node> nodes = snapshot(root);
+            StockInfoEngine.Result info = StockInfoEngine.find(nodes);
+            saveStockInfo(info.name, info.code);
             PriceCaptureEngine.Result result = PriceCaptureEngine.capture(nodes);
             saveDiagnostics(packageName, nodes.size(), result.diagnostics);
             if (result.isSuccess()) {
@@ -340,20 +362,18 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
             return;
         }
         captureInFlight = true;
-        saveMessage("正在本地离线识别蓝色标签…");
+        saveMessage("正在本地离线识别价格和股票信息…");
         renderPrices();
         offlineRecognizer.capture(new OfflineScreenshotRecognizer.Callback() {
             @Override
-            public void onPrice(String price) {
+            public void onResult(String price, String name, String code, String errorMessage) {
                 captureInFlight = false;
-                applyCapturedPrice(stop, price, "离线图像识别");
-                renderPrices();
-            }
-
-            @Override
-            public void onError(String message) {
-                captureInFlight = false;
-                saveMessage(message);
+                saveStockInfo(name, code);
+                if (price != null) {
+                    applyCapturedPrice(stop, price, "离线图像识别");
+                } else {
+                    saveMessage(errorMessage);
+                }
                 renderPrices();
             }
         });
@@ -362,10 +382,65 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private void applyCapturedPrice(boolean stop, String price, String source) {
         String key = stop ? State.KEY_STOP : State.KEY_BUY;
         String label = stop ? "止损价" : "买入价";
-        preferences.edit().putString(key, price)
+        SharedPreferences.Editor editor = preferences.edit().putString(key, price)
                 .putString(State.KEY_MESSAGE,
-                        label + "已捕获 " + price + " · " + source)
-                .apply();
+                        label + "已捕获 " + price + " · " + source);
+        if (!stop) {
+            editor.putString(State.KEY_BUY_DATE, LocalDate.now().toString());
+        }
+        editor.apply();
+    }
+
+    private void saveStockInfo(String name, String code) {
+        if ((name == null || name.isEmpty()) && (code == null || code.isEmpty())) {
+            return;
+        }
+        SharedPreferences.Editor editor = preferences.edit();
+        if (name != null && !name.isEmpty()) {
+            editor.putString(State.KEY_NAME, name);
+        }
+        if (code != null && !code.isEmpty()) {
+            editor.putString(State.KEY_CODE, code);
+        }
+        editor.apply();
+    }
+
+    private void copyTradeInfo() {
+        String stop = preferences.getString(State.KEY_STOP, "");
+        String buy = preferences.getString(State.KEY_BUY, "");
+        String name = preferences.getString(State.KEY_NAME, "");
+        String code = preferences.getString(State.KEY_CODE, "");
+        String date = preferences.getString(State.KEY_BUY_DATE, "");
+        if (date.isEmpty()) {
+            date = LocalDate.now().toString();
+        }
+        String text = TradeRecordFormatter.format(stop, buy, name, code, date);
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("交易信息", text));
+            }
+            Toast.makeText(this, "交易信息已复制", Toast.LENGTH_SHORT).show();
+            saveMessage("交易信息已复制到剪贴板");
+        } catch (RuntimeException error) {
+            saveMessage("复制失败，请重试");
+        }
+        renderPrices();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (overlayView != null && overlayParams != null && windowManager != null) {
+            overlayParams.width = getResources().getDisplayMetrics().widthPixels
+                    - Ui.dp(this, 12);
+            overlayParams.y = Ui.dp(this, 12);
+            try {
+                windowManager.updateViewLayout(overlayView, overlayParams);
+            } catch (IllegalArgumentException ignored) {
+                // The overlay may have been removed while the configuration changed.
+            }
+        }
     }
 
     private void diagnoseCurrentPage() {
@@ -458,7 +533,12 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         }
         String stop = preferences.getString(State.KEY_STOP, "");
         String buy = preferences.getString(State.KEY_BUY, "");
+        String name = preferences.getString(State.KEY_NAME, "");
+        String code = preferences.getString(State.KEY_CODE, "");
         String message = preferences.getString(State.KEY_MESSAGE, "等待捕获");
+        stockValue.setText(name.isEmpty() && code.isEmpty()
+                ? "股票未识别"
+                : (name + (name.isEmpty() || code.isEmpty() ? "" : " ") + code));
         stopValue.setText(stop.isEmpty() ? "--" : stop);
         buyValue.setText(buy.isEmpty() ? "--" : buy);
 
@@ -467,23 +547,18 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 RiskCalculator.Calculation result = RiskCalculator.calculate(stop, buy);
                 targetValue.setText(result.target);
                 targetValue.setTextColor(Ui.ACCENT);
-                riskValue.setText("每股风险 " + result.risk + "  ·  2R 收益 " + result.profit);
-                riskValue.setTextColor(Ui.MUTED);
             } catch (IllegalArgumentException error) {
                 targetValue.setText("--");
                 targetValue.setTextColor(Ui.DANGER);
-                riskValue.setText(error.getMessage());
-                riskValue.setTextColor(Ui.DANGER);
+                message = error.getMessage();
             }
         } else {
             targetValue.setText("--");
             targetValue.setTextColor(Ui.ACCENT);
-            riskValue.setText("等待止损价和买入价");
-            riskValue.setTextColor(Ui.MUTED);
         }
         statusValue.setText(message);
         statusValue.setTextColor(message.contains("失败") || message.contains("无法")
-                || message.contains("未识别") ? Ui.DANGER : Ui.MUTED);
+                || message.contains("未识别") || message.contains("未找到") ? Ui.DANGER : Ui.MUTED);
     }
 
     private static String string(CharSequence value) {

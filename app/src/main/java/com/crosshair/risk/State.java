@@ -5,6 +5,9 @@ final class State {
     static final String KEY_VISIBLE = "overlay_visible";
     static final String KEY_STOP = "stop_price";
     static final String KEY_BUY = "buy_price";
+    static final String KEY_NAME = "stock_name";
+    static final String KEY_CODE = "stock_code";
+    static final String KEY_BUY_DATE = "buy_date";
     static final String KEY_MESSAGE = "last_message";
     static final String KEY_PACKAGE = "foreground_package";
     static final String KEY_DIAGNOSTICS = "diagnostics";
