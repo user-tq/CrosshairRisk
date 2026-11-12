@@ -11,6 +11,7 @@ final class State {
     static final String KEY_MESSAGE = "last_message";
     static final String KEY_PACKAGE = "foreground_package";
     static final String KEY_DIAGNOSTICS = "diagnostics";
+    static final String KEY_HEADER_TEXT = "header_ocr_text";
 
     static final String ACTION_TOGGLE = "com.crosshair.risk.action.TOGGLE";
     static final String ACTION_CLEAR = "com.crosshair.risk.action.CLEAR";

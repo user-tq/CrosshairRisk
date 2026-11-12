@@ -63,6 +63,27 @@ public final class StockInfoEngineTest {
     }
 
     @Test
+    public void prefersCenteredTopTitleFromOcrLines() {
+        StockInfoEngine.Result result = StockInfoEngine.fromOcrLines(Arrays.asList(
+                new StockInfoEngine.OcrLine("01:09", 10, 40, 120, 70),
+                new StockInfoEngine.OcrLine("海天味业", 300, 150, 580, 190),
+                new StockInfoEngine.OcrLine("603288 融通 L1", 380, 195, 520, 220),
+                new StockInfoEngine.OcrLine("沪深300", 300, 470, 500, 500)
+        ), 886, 1920);
+
+        assertEquals("海天味业", result.name);
+        assertEquals("603288", result.code);
+    }
+
+    @Test
+    public void extractsNameFromCombinedNameAndCodeLine() {
+        StockInfoEngine.Result result = StockInfoEngine.fromText("海天味业 603288");
+
+        assertEquals("海天味业", result.name);
+        assertEquals("603288", result.code);
+    }
+
+    @Test
     public void keepsNameWithoutCodeWhenOcrMissesDigits() {
         StockInfoEngine.Result result = StockInfoEngine.fromText("沪深300ETF华泰柏瑞");
 

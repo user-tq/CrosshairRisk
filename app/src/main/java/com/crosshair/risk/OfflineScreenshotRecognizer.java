@@ -3,6 +3,7 @@ package com.crosshair.risk;
 import android.accessibilityservice.AccessibilityService;
 import android.annotation.TargetApi;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.hardware.HardwareBuffer;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,6 +17,8 @@ import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +26,8 @@ import java.util.concurrent.TimeUnit;
 @TargetApi(30)
 final class OfflineScreenshotRecognizer {
     interface Callback {
-        void onResult(String price, String name, String code, String errorMessage);
+        void onResult(String price, String name, String code, String headerText,
+                      String errorMessage);
     }
 
     private final AccessibilityService service;
@@ -42,7 +46,8 @@ final class OfflineScreenshotRecognizer {
 
     void capture(Callback callback) {
         if (closed) {
-            callback.onResult(null, null, null, "离线识别服务已停止，请重新启用无障碍服务");
+            callback.onResult(null, null, null, null,
+                    "离线识别服务已停止，请重新启用无障碍服务");
             return;
         }
         try {
@@ -55,12 +60,13 @@ final class OfflineScreenshotRecognizer {
 
                         @Override
                         public void onFailure(int errorCode) {
-                            postResult(callback, null, null, null,
+                            postResult(callback, null, null, null, null,
                                     "系统截图失败（" + errorCode + "），请移开遮挡后重试");
                         }
                     });
         } catch (RuntimeException error) {
-            postResult(callback, null, null, null, "系统未允许截图，请重新启用无障碍服务后再试");
+            postResult(callback, null, null, null, null,
+                    "系统未允许截图，请重新启用无障碍服务后再试");
         }
     }
 
@@ -71,7 +77,7 @@ final class OfflineScreenshotRecognizer {
         try {
             Bitmap hardware = Bitmap.wrapHardwareBuffer(buffer, result.getColorSpace());
             if (hardware == null) {
-                postResult(callback, null, null, null, "无法读取屏幕图像");
+                postResult(callback, null, null, null, null, "无法读取屏幕图像");
                 return;
             }
             try {
@@ -80,13 +86,13 @@ final class OfflineScreenshotRecognizer {
                 hardware.recycle();
             }
         } catch (RuntimeException error) {
-            postResult(callback, null, null, null, "屏幕图像格式不受支持");
+            postResult(callback, null, null, null, null, "屏幕图像格式不受支持");
             return;
         } finally {
             buffer.close();
         }
         if (screenshot == null) {
-            postResult(callback, null, null, null, "无法复制屏幕图像");
+            postResult(callback, null, null, null, null, "无法复制屏幕图像");
             return;
         }
 
@@ -94,6 +100,7 @@ final class OfflineScreenshotRecognizer {
         String priceError = null;
         String name = null;
         String code = null;
+        String headerText = null;
         try {
             int width = screenshot.getWidth();
             int height = screenshot.getHeight();
@@ -112,28 +119,33 @@ final class OfflineScreenshotRecognizer {
                 int bottom = Math.min(height - 1, region.bottom + padding);
                 Bitmap crop = Bitmap.createBitmap(screenshot, left, top,
                         right - left + 1, bottom - top + 1);
-                String text = readText(recognizer, scaled(crop, 3));
+                Text text = read(recognizer, scaled(crop, 3), 10);
                 if (text == null) {
                     priceError = "离线数字识别失败，请保持标签清晰后重试";
                 } else {
-                    price = OfflinePriceParser.parse(text);
+                    price = OfflinePriceParser.parse(text.getText());
                     if (price == null) {
                         priceError = "蓝色标签中未识别出唯一价格，请移开浮窗后重试";
                     }
                 }
             }
 
-            int headerLeft = Math.round(width * 0.08f);
-            int headerTop = Math.round(height * 0.02f);
-            int headerRight = Math.round(width * 0.92f);
-            int headerBottom = Math.round(height * 0.16f);
+            int headerLeft = Math.round(width * 0.04f);
+            int headerTop = Math.round(height * 0.012f);
+            int headerRight = Math.round(width * 0.96f);
+            int headerBottom = Math.round(height * 0.2f);
             if (headerRight - headerLeft > 40 && headerBottom - headerTop > 20) {
                 Bitmap header = Bitmap.createBitmap(screenshot, headerLeft, headerTop,
                         headerRight - headerLeft, headerBottom - headerTop);
-                StockInfoEngine.Result info = StockInfoEngine.fromText(
-                        readText(chineseRecognizer, scaled(header, 2)));
-                name = info.name;
-                code = info.code;
+                Text headerResult = read(chineseRecognizer, scaled(header, 2), 20);
+                if (headerResult != null) {
+                    headerText = headerResult.getText();
+                    StockInfoEngine.Result byPosition = StockInfoEngine.fromOcrLines(
+                            ocrLines(headerResult, headerLeft, headerTop, 2), width, height);
+                    StockInfoEngine.Result byText = StockInfoEngine.fromText(headerText);
+                    name = byPosition.hasName() ? byPosition.name : byText.name;
+                    code = byPosition.hasCode() ? byPosition.code : byText.code;
+                }
             }
         } catch (RuntimeException error) {
             priceError = priceError == null
@@ -141,7 +153,35 @@ final class OfflineScreenshotRecognizer {
         } finally {
             screenshot.recycle();
         }
-        postResult(callback, price, name, code, priceError);
+        postResult(callback, price, name, code, headerText, priceError);
+    }
+
+    private static List<StockInfoEngine.OcrLine> ocrLines(Text text, int offsetLeft,
+                                                          int offsetTop, int scale) {
+        List<StockInfoEngine.OcrLine> lines = new ArrayList<>();
+        if (text == null) {
+            return lines;
+        }
+        for (Text.TextBlock block : text.getTextBlocks()) {
+            for (Text.Line line : block.getLines()) {
+                String value = line.getText();
+                if (value == null || value.trim().isEmpty()) {
+                    continue;
+                }
+                Rect box = line.getBoundingBox();
+                if (box == null) {
+                    lines.add(new StockInfoEngine.OcrLine(value,
+                            offsetLeft, offsetTop, offsetLeft, offsetTop));
+                } else {
+                    lines.add(new StockInfoEngine.OcrLine(value,
+                            offsetLeft + box.left / scale,
+                            offsetTop + box.top / scale,
+                            offsetLeft + box.right / scale,
+                            offsetTop + box.bottom / scale));
+                }
+            }
+        }
+        return lines;
     }
 
     private static Bitmap scaled(Bitmap bitmap, int factor) {
@@ -157,11 +197,10 @@ final class OfflineScreenshotRecognizer {
         }
     }
 
-    private String readText(TextRecognizer target, Bitmap input) {
+    private Text read(TextRecognizer target, Bitmap input, int seconds) {
         try {
-            Text text = Tasks.await(target.process(InputImage.fromBitmap(input, 0)),
-                    10, TimeUnit.SECONDS);
-            return text == null ? null : text.getText();
+            return Tasks.await(target.process(InputImage.fromBitmap(input, 0)),
+                    seconds, TimeUnit.SECONDS);
         } catch (Exception error) {
             return null;
         } finally {
@@ -170,10 +209,10 @@ final class OfflineScreenshotRecognizer {
     }
 
     private void postResult(Callback callback, String price, String name, String code,
-                            String errorMessage) {
+                            String headerText, String errorMessage) {
         mainHandler.post(() -> {
             if (!closed) {
-                callback.onResult(price, name, code, errorMessage);
+                callback.onResult(price, name, code, headerText, errorMessage);
             }
         });
     }

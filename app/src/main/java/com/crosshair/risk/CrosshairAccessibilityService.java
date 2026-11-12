@@ -241,7 +241,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         clear.setOnClickListener(view -> {
             preferences.edit().remove(State.KEY_STOP).remove(State.KEY_BUY)
                     .remove(State.KEY_NAME).remove(State.KEY_CODE)
-                    .remove(State.KEY_BUY_DATE)
+                    .remove(State.KEY_BUY_DATE).remove(State.KEY_HEADER_TEXT)
                     .putString(State.KEY_MESSAGE, "交易信息已清空").apply();
             renderPrices();
         });
@@ -356,7 +356,11 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
             saveDiagnostics(packageName, nodes.size(), result.diagnostics);
             if (result.isSuccess()) {
                 applyCapturedPrice(stop, result.price, "页面元素");
-                renderPrices();
+                if (!info.hasName() || !info.hasCode()) {
+                    startOfflineInfoCapture();
+                } else {
+                    renderPrices();
+                }
                 return;
             }
             startOfflineCapture(stop);
@@ -368,28 +372,16 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     }
 
     private void startOfflineCapture(boolean stop) {
-        if (Build.VERSION.SDK_INT < 30) {
-            saveMessage("元素未识别；离线截图识别需要 Android 11 及以上");
-            renderPrices();
+        if (!prepareOfflineCapture("正在本地离线识别价格和股票信息…")) {
             return;
         }
-        try {
-            if (offlineRecognizer == null) {
-                offlineRecognizer = new OfflineScreenshotRecognizer(this);
-            }
-        } catch (RuntimeException error) {
-            saveMessage("离线识别模型启动失败，请重新安装应用后再试");
-            renderPrices();
-            return;
-        }
-        captureInFlight = true;
-        saveMessage("正在本地离线识别价格和股票信息…");
-        renderPrices();
         offlineRecognizer.capture(new OfflineScreenshotRecognizer.Callback() {
             @Override
-            public void onResult(String price, String name, String code, String errorMessage) {
+            public void onResult(String price, String name, String code, String headerText,
+                                 String errorMessage) {
                 captureInFlight = false;
                 saveStockInfo(name, code);
+                saveHeaderText(headerText);
                 if (price != null) {
                     applyCapturedPrice(stop, price, "离线图像识别");
                 } else {
@@ -398,6 +390,62 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 renderPrices();
             }
         });
+    }
+
+    private void startOfflineInfoCapture() {
+        if (Build.VERSION.SDK_INT < 30) {
+            renderPrices();
+            return;
+        }
+        if (!prepareOfflineCapture("价格已捕获，正在离线识别股票名称和代码…")) {
+            renderPrices();
+            return;
+        }
+        offlineRecognizer.capture(new OfflineScreenshotRecognizer.Callback() {
+            @Override
+            public void onResult(String price, String name, String code, String headerText,
+                                 String errorMessage) {
+                captureInFlight = false;
+                saveStockInfo(name, code);
+                saveHeaderText(headerText);
+                if (name == null && code == null) {
+                    saveMessage("未识别到股票信息，请保持顶部标题可见后重试");
+                } else {
+                    saveMessage("股票信息已更新");
+                }
+                renderPrices();
+            }
+        });
+    }
+
+    private boolean prepareOfflineCapture(String message) {
+        if (Build.VERSION.SDK_INT < 30) {
+            saveMessage("元素未识别；离线截图识别需要 Android 11 及以上");
+            return false;
+        }
+        try {
+            if (offlineRecognizer == null) {
+                offlineRecognizer = new OfflineScreenshotRecognizer(this);
+            }
+        } catch (RuntimeException error) {
+            saveMessage("离线识别模型启动失败，请重新安装应用后再试");
+            return false;
+        }
+        captureInFlight = true;
+        saveMessage(message);
+        renderPrices();
+        return true;
+    }
+
+    private void saveHeaderText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return;
+        }
+        String value = text.trim();
+        if (value.length() > 600) {
+            value = value.substring(0, 600) + "…";
+        }
+        preferences.edit().putString(State.KEY_HEADER_TEXT, value).apply();
     }
 
     private void applyCapturedPrice(boolean stop, String price, String source) {

@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
     private TextView detail;
     private TextView foregroundPackage;
     private TextView diagnostics;
+    private TextView headerOcr;
     private Button overlayButton;
     private SharedPreferences preferences;
 
@@ -129,6 +130,11 @@ public final class MainActivity extends Activity {
         helpCard.addView(diagnostics, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
 
+        headerOcr = Ui.text(this, "标题区识别：暂无", 12, Ui.MUTED);
+        headerOcr.setTextIsSelectable(true);
+        helpCard.addView(headerOcr, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
+
         TextView privacy = Ui.text(this,
                 "说明：优先读取页面元素；失败时，Android 11 及以上会通过无障碍截图定位左侧蓝色标签和顶部股票标题，并使用 APK 内置模型离线识别价格、股票名称与代码。截图仅在内存中处理，不保存；应用没有联网权限。请避免浮窗遮挡蓝色价格标签。",
                 12, Ui.MUTED);
@@ -148,12 +154,23 @@ public final class MainActivity extends Activity {
 
     private void copyDiagnostics() {
         String value = preferences.getString(State.KEY_DIAGNOSTICS, "");
-        if (value.isEmpty()) {
+        String headerText = preferences.getString(State.KEY_HEADER_TEXT, "");
+        if (value.isEmpty() && headerText.isEmpty()) {
             Toast.makeText(this, "请先在通达信十字光标页面执行诊断", Toast.LENGTH_LONG).show();
             return;
         }
+        StringBuilder report = new StringBuilder();
+        if (!value.isEmpty()) {
+            report.append(value);
+        }
+        if (!headerText.isEmpty()) {
+            if (report.length() > 0) {
+                report.append("\n\n");
+            }
+            report.append("标题区 OCR 原文：\n").append(headerText);
+        }
         ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        clipboard.setPrimaryClip(ClipData.newPlainText("通达信页面元素诊断", value));
+        clipboard.setPrimaryClip(ClipData.newPlainText("通达信页面元素诊断", report.toString()));
         Toast.makeText(this, "完整诊断结果已复制", Toast.LENGTH_SHORT).show();
     }
 
@@ -237,6 +254,9 @@ public final class MainActivity extends Activity {
 
         String diagnosticText = preferences.getString(State.KEY_DIAGNOSTICS, "");
         diagnostics.setText(diagnosticText.isEmpty() ? "暂无诊断结果" : diagnosticText);
+        String headerText = preferences.getString(State.KEY_HEADER_TEXT, "");
+        headerOcr.setText(headerText.isEmpty()
+                ? "标题区识别：暂无" : "标题区识别原文：\n" + headerText);
     }
 
     @Override

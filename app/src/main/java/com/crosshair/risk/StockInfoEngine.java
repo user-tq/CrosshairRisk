@@ -73,29 +73,143 @@ public final class StockInfoEngine {
                 continue;
             }
             if (code == null) {
-                Matcher matcher = CODE_PATTERN.matcher(line);
-                while (matcher.find()) {
-                    if (isStockCode(matcher.group(1))) {
-                        code = matcher.group(1);
-                        break;
-                    }
-                }
+                code = firstStockCode(line);
             }
-            if (isNameCandidate(line)) {
-                int score = nameScore(line);
+            String candidate = nameFromLine(line);
+            if (candidate != null) {
+                int score = nameScore(candidate);
                 if (score > nameScore) {
                     nameScore = score;
-                    name = line;
+                    name = candidate;
                 }
             }
         }
-        if (name != null && code != null && name.contains(code)) {
-            name = clean(name.replace(code, ""));
-        }
-        if (name != null && (name.length() < 2 || !CJK.matcher(name).find())) {
-            name = null;
-        }
         return new Result(name, code);
+    }
+
+    public static Result fromOcrLines(List<OcrLine> lines, int screenWidth, int screenHeight) {
+        if (lines == null || lines.isEmpty()) {
+            return new Result(null, null);
+        }
+        if (screenWidth <= 0) {
+            screenWidth = 1080;
+        }
+        if (screenHeight <= 0) {
+            screenHeight = 2400;
+        }
+        String code = null;
+        int bestCodeScore = Integer.MIN_VALUE;
+        boolean codeAmbiguous = false;
+        String name = null;
+        int bestNameScore = Integer.MIN_VALUE;
+        for (OcrLine line : lines) {
+            if (line == null) {
+                continue;
+            }
+            String text = clean(line.text);
+            if (text.isEmpty() || line.top > screenHeight * 0.35f) {
+                continue;
+            }
+            Matcher matcher = CODE_PATTERN.matcher(text);
+            while (matcher.find()) {
+                String value = matcher.group(1);
+                if (!isStockCode(value)) {
+                    continue;
+                }
+                int score = 0;
+                if (line.top < screenHeight * 0.12f) {
+                    score += 8;
+                } else if (line.top < screenHeight * 0.22f) {
+                    score += 4;
+                }
+                if (text.equals(value)) {
+                    score += 2;
+                }
+                if (score > bestCodeScore) {
+                    code = value;
+                    bestCodeScore = score;
+                    codeAmbiguous = false;
+                } else if (score == bestCodeScore && !value.equals(code)) {
+                    codeAmbiguous = true;
+                }
+            }
+            String candidate = nameFromLine(text);
+            if (candidate != null) {
+                int score = ocrNameScore(candidate, line, screenWidth, screenHeight);
+                if (score > bestNameScore) {
+                    bestNameScore = score;
+                    name = candidate;
+                }
+            }
+        }
+        return new Result(name, codeAmbiguous ? null : code);
+    }
+
+    private static int ocrNameScore(String name, OcrLine line, int screenWidth,
+                                    int screenHeight) {
+        int score = 0;
+        int center = (line.left + line.right) / 2;
+        if (center > screenWidth * 0.2f && center < screenWidth * 0.8f) {
+            score += 4;
+        }
+        if (line.top < screenHeight * 0.12f) {
+            score += 5;
+        } else if (line.top < screenHeight * 0.22f) {
+            score += 3;
+        } else {
+            score += 1;
+        }
+        String upper = name.toUpperCase(Locale.ROOT);
+        if (upper.contains("ETF") || upper.contains("LOF") || upper.contains("REIT")
+                || name.contains("基金") || name.contains("转债")) {
+            score += 3;
+        } else if (name.matches("^(沪深|上证|深证|中证|国证|创业板|科创)\\d{2,4}.*")) {
+            score -= 6;
+        }
+        if (name.matches(".*\\d.*")) {
+            score += 2;
+        }
+        if (name.length() >= 4) {
+            score += 1;
+        }
+        if (name.length() <= 3) {
+            score -= 3;
+        }
+        return score;
+    }
+
+    private static String nameFromLine(String raw) {
+        String line = clean(raw);
+        if (line.isEmpty()) {
+            return null;
+        }
+        String code = firstStockCode(line);
+        if (code == null) {
+            return isNameCandidate(line) ? line : null;
+        }
+        int index = line.indexOf(code);
+        String before = clean(line.substring(0, index));
+        String after = clean(line.substring(index + code.length()));
+        if (isNameCandidate(before)) {
+            return before;
+        }
+        if (!after.matches(".*[0-9A-Za-z].*") && isNameCandidate(after)) {
+            return after;
+        }
+        return null;
+    }
+
+    private static String firstStockCode(String text) {
+        if (text == null) {
+            return null;
+        }
+        Matcher matcher = CODE_PATTERN.matcher(text);
+        while (matcher.find()) {
+            if (isStockCode(matcher.group(1))) {
+                return matcher.group(1);
+            }
+        }
+        return null;
     }
 
     private static int nameScore(String name) {
@@ -165,8 +279,8 @@ public final class StockInfoEngine {
         String best = null;
         int bestScore = Integer.MIN_VALUE;
         for (Entry entry : entries) {
-            String name = clean(entry.text);
-            if (!isNameCandidate(name)) {
+            String name = nameFromLine(entry.text);
+            if (name == null) {
                 continue;
             }
             int score = 0;
@@ -279,6 +393,30 @@ public final class StockInfoEngine {
         Result(String name, String code) {
             this.name = name;
             this.code = code;
+        }
+
+        public boolean hasName() {
+            return name != null && !name.isEmpty();
+        }
+
+        public boolean hasCode() {
+            return code != null && !code.isEmpty();
+        }
+    }
+
+    public static final class OcrLine {
+        public final String text;
+        public final int left;
+        public final int top;
+        public final int right;
+        public final int bottom;
+
+        public OcrLine(String text, int left, int top, int right, int bottom) {
+            this.text = text;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
         }
     }
 
