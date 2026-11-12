@@ -140,6 +140,12 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         container.addView(header, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 28)));
 
+        TextView dragHandle = Ui.text(this, "⠿", 12, Ui.MUTED);
+        dragHandle.setGravity(Gravity.CENTER);
+        dragHandle.setContentDescription("拖动悬浮窗");
+        header.addView(dragHandle, new LinearLayout.LayoutParams(Ui.dp(this, 18),
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
         stockValue = Ui.bold(this, "股票未识别", 12, Ui.WHITE);
         stockValue.setSingleLine(true);
         stockValue.setEllipsize(TextUtils.TruncateAt.END);
@@ -187,7 +193,6 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
         LinearLayout targetCell = priceCell("2R卖出", Ui.ACCENT, Ui.ACCENT, 17, holder);
         targetValue = holder[0];
-        targetValue.setTextIsSelectable(true);
         body.addView(targetCell, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1.2f));
 
@@ -250,7 +255,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
             preferences.edit().putBoolean(State.KEY_VISIBLE, false).apply();
             removeOverlay();
         });
-        enableDragging(header);
+        enableDragging(container);
 
         int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 12);
         overlayParams = new WindowManager.LayoutParams(
@@ -284,6 +289,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private void enableDragging(View handle) {
         final float[] initialTouch = new float[2];
         final int[] initialPosition = new int[2];
+        final boolean[] dragging = new boolean[1];
         handle.setOnTouchListener((view, event) -> {
             if (overlayParams == null || overlayView == null) {
                 return false;
@@ -294,18 +300,33 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                     initialTouch[1] = event.getRawY();
                     initialPosition[0] = overlayParams.x;
                     initialPosition[1] = overlayParams.y;
+                    dragging[0] = true;
                     return true;
                 case MotionEvent.ACTION_MOVE:
-                    overlayParams.x = initialPosition[0]
-                            + Math.round(event.getRawX() - initialTouch[0]);
-                    overlayParams.y = initialPosition[1]
-                            + Math.round(event.getRawY() - initialTouch[1]);
-                    windowManager.updateViewLayout(overlayView, overlayParams);
+                    if (!dragging[0]) {
+                        return false;
+                    }
+                    moveOverlay(initialPosition[0] + Math.round(event.getRawX() - initialTouch[0]),
+                            initialPosition[1] + Math.round(event.getRawY() - initialTouch[1]));
                     return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    boolean wasDragging = dragging[0];
+                    dragging[0] = false;
+                    return wasDragging;
                 default:
-                    return false;
+                    return dragging[0];
             }
         });
+    }
+
+    private void moveOverlay(int x, int y) {
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int maxX = Math.max(0, metrics.widthPixels - overlayView.getWidth());
+        int maxY = Math.max(0, metrics.heightPixels - overlayView.getHeight());
+        overlayParams.x = Math.max(0, Math.min(x, maxX));
+        overlayParams.y = Math.max(0, Math.min(y, maxY));
+        windowManager.updateViewLayout(overlayView, overlayParams);
     }
 
     private void captureInto(boolean stop) {
