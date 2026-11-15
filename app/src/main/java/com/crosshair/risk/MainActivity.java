@@ -19,6 +19,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.List;
+
 public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refresh = new Runnable() {
@@ -35,7 +37,10 @@ public final class MainActivity extends Activity {
     private TextView foregroundPackage;
     private TextView diagnostics;
     private TextView headerOcr;
+    private TextView backtestStats;
+    private TextView backtestList;
     private Button overlayButton;
+    private Button modeButton;
     private SharedPreferences preferences;
 
     @Override
@@ -105,6 +110,50 @@ public final class MainActivity extends Activity {
         quoteCard.addView(clear, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
 
+        LinearLayout backtestCard = card();
+        content.addView(backtestCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 16, this));
+        backtestCard.addView(Ui.bold(this, "回测模式", 16, Ui.WHITE));
+        backtestCard.addView(Ui.text(this,
+                "在浮窗右上角切换“计算 / 回测”。回测中依次捕获止损、买入、卖出，"
+                        + "卖出后自动记为一笔，并清空当前价格以便继续下一笔。",
+                13, Ui.MUTED), Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
+
+        modeButton = Ui.button(this, "", false);
+        modeButton.setOnClickListener(view -> sendControl(State.ACTION_TOGGLE_MODE));
+        backtestCard.addView(modeButton, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
+        backtestStats = Ui.text(this, "暂无回测记录", 14, Ui.WHITE);
+        backtestStats.setTextIsSelectable(true);
+        backtestCard.addView(backtestStats, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
+
+        Button export = Ui.button(this, "导出记录到剪贴板", true);
+        export.setOnClickListener(view -> exportBacktest());
+        backtestCard.addView(export, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
+        Button undo = Ui.button(this, "撤销上一笔", false);
+        undo.setOnClickListener(view -> undoBacktest());
+        backtestCard.addView(undo, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
+
+        Button clearBacktest = Ui.button(this, "清空回测记录", false);
+        clearBacktest.setOnClickListener(view -> {
+            preferences.edit().remove(State.KEY_BACKTEST_LOG).apply();
+            Toast.makeText(this, "回测记录已清空", Toast.LENGTH_SHORT).show();
+            refreshState();
+        });
+        backtestCard.addView(clearBacktest, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
+
+        backtestList = Ui.text(this, "暂无回测记录", 12, Ui.MUTED);
+        backtestList.setTextIsSelectable(true);
+        backtestCard.addView(backtestList, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
         LinearLayout helpCard = card();
         content.addView(helpCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 16, this));
@@ -172,6 +221,31 @@ public final class MainActivity extends Activity {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("通达信页面元素诊断", report.toString()));
         Toast.makeText(this, "完整诊断结果已复制", Toast.LENGTH_SHORT).show();
+    }
+
+    private void exportBacktest() {
+        List<BacktestLog.Entry> entries = BacktestLog.parse(
+                preferences.getString(State.KEY_BACKTEST_LOG, ""));
+        String name = preferences.getString(State.KEY_NAME, "");
+        String code = preferences.getString(State.KEY_CODE, "");
+        String text = BacktestLog.export(entries, name, code);
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("回测记录", text));
+        Toast.makeText(this, "回测记录已复制到剪贴板", Toast.LENGTH_SHORT).show();
+    }
+
+    private void undoBacktest() {
+        List<BacktestLog.Entry> entries = BacktestLog.parse(
+                preferences.getString(State.KEY_BACKTEST_LOG, ""));
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "暂无回测记录", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        entries.remove(entries.size() - 1);
+        preferences.edit().putString(State.KEY_BACKTEST_LOG,
+                BacktestLog.serialize(entries)).apply();
+        Toast.makeText(this, "已撤销上一笔", Toast.LENGTH_SHORT).show();
+        refreshState();
     }
 
     private void openAccessibilitySettings() {
@@ -257,6 +331,20 @@ public final class MainActivity extends Activity {
         String headerText = preferences.getString(State.KEY_HEADER_TEXT, "");
         headerOcr.setText(headerText.isEmpty()
                 ? "标题区识别：暂无" : "标题区识别原文：\n" + headerText);
+
+        boolean backtestMode = BacktestLog.MODE_BACKTEST.equals(
+                preferences.getString(State.KEY_MODE, BacktestLog.MODE_COMPUTE));
+        modeButton.setText(backtestMode
+                ? "当前：回测模式（点按切回计算）" : "当前：计算模式（点按切回回测）");
+        List<BacktestLog.Entry> entries = BacktestLog.parse(
+                preferences.getString(State.KEY_BACKTEST_LOG, ""));
+        BacktestLog.Stats stats = BacktestLog.stats(entries, name, code);
+        String scope = name.isEmpty() && code.isEmpty() ? "全部记录" : "当前股票";
+        backtestStats.setText(scope + " · 已记录 " + stats.count + " 笔 · 胜率 "
+                + stats.winRate + "% · 总R " + stats.totalR
+                + " · 平均R " + stats.averageR);
+        backtestList.setText(entries.isEmpty()
+                ? "暂无回测记录" : BacktestLog.export(entries, name, code));
     }
 
     @Override

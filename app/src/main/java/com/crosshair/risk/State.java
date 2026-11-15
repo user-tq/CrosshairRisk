@@ -12,9 +12,14 @@ final class State {
     static final String KEY_PACKAGE = "foreground_package";
     static final String KEY_DIAGNOSTICS = "diagnostics";
     static final String KEY_HEADER_TEXT = "header_ocr_text";
+    static final String KEY_SELL = "sell_price";
+    static final String KEY_SELL_DATE = "sell_date";
+    static final String KEY_MODE = "app_mode";
+    static final String KEY_BACKTEST_LOG = "backtest_log";
 
     static final String ACTION_TOGGLE = "com.crosshair.risk.action.TOGGLE";
     static final String ACTION_CLEAR = "com.crosshair.risk.action.CLEAR";
+    static final String ACTION_TOGGLE_MODE = "com.crosshair.risk.action.TOGGLE_MODE";
 
     private State() {
     }

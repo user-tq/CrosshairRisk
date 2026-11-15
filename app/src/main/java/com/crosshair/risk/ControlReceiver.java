@@ -25,6 +25,17 @@ public final class ControlReceiver extends BroadcastReceiver {
             return;
         }
 
+        if (State.ACTION_TOGGLE_MODE.equals(action)) {
+            String mode = preferences.getString(State.KEY_MODE, BacktestLog.MODE_COMPUTE);
+            String next = BacktestLog.MODE_BACKTEST.equals(mode)
+                    ? BacktestLog.MODE_COMPUTE : BacktestLog.MODE_BACKTEST;
+            preferences.edit().putString(State.KEY_MODE, next).apply();
+            if (service != null) {
+                service.onModeChanged();
+            }
+            return;
+        }
+
         if (State.ACTION_TOGGLE.equals(action)) {
             boolean show = !preferences.getBoolean(State.KEY_VISIBLE, true);
             preferences.edit().putBoolean(State.KEY_VISIBLE, show).apply();
