@@ -91,6 +91,18 @@ public final class StockInfoEngineTest {
         assertNull(result.code);
     }
 
+    @Test
+    public void extractsEtfNameAndCodeFromMessyOcrText() {
+        String ocr = "人\n00:12\n).741\n„024 -3.14%\n今开\n最高\n最低\n"
+                + "恒生医药ETF华夏\n159892 图LT+0\n0.757 昨收\n0.761量比\n0.19 5G\n"
+                + "KB/S l\n0.740振幅\n5G\nl令\n0.765 总颜 3.96-\n0.90 总量\n62\n"
+                + "2.75% 流益价率\n527.5\n-0.43";
+        StockInfoEngine.Result result = StockInfoEngine.fromText(ocr);
+
+        assertEquals("恒生医药ETF华夏", result.name);
+        assertEquals("159892", result.code);
+    }
+
     private static PriceCaptureEngine.Node node(String text, String bounds) {
         return new PriceCaptureEngine.Node(text, null, null, "android.widget.TextView",
                 bounds, true, false, false);

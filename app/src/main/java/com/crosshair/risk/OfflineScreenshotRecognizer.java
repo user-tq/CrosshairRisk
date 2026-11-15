@@ -143,7 +143,11 @@ final class OfflineScreenshotRecognizer {
                     StockInfoEngine.Result byPosition = StockInfoEngine.fromOcrLines(
                             ocrLines(headerResult, headerLeft, headerTop, 2), width, height);
                     StockInfoEngine.Result byText = StockInfoEngine.fromText(headerText);
-                    name = byPosition.hasName() ? byPosition.name : byText.name;
+                    // 名称优先使用全文本分析结果（对 OCR 噪声过滤更稳健），
+                    // 仅当文本分析无结果时才回退到位置分析。
+                    name = byText.hasName() ? byText.name : byPosition.name;
+                    // 代码优先使用位置分析结果（靠近标题的 6 位数字更可能是股票代码），
+                    // 无结果时回退到文本分析。
                     code = byPosition.hasCode() ? byPosition.code : byText.code;
                 }
             }

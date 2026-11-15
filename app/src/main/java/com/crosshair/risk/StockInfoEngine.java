@@ -17,7 +17,8 @@ public final class StockInfoEngine {
     private static final String[] NAME_EXCLUSIONS = {
             "指数", "今开", "昨收", "最高", "最低", "成交", "量比", "振幅", "溢价",
             "换手", "总额", "总量", "涨幅", "跌幅", "时间", "日期", "盘后", "均价",
-            "买一", "卖一", "五档", "自选", "板块", "公告", "研报", "诊断", "复制"
+            "买一", "卖一", "五档", "自选", "板块", "公告", "研报", "诊断", "复制",
+            "总颜", "流益", "量:", "额:"
     };
     private static final String CODE_FIRST_DIGITS = "0134568";
 
@@ -218,6 +219,8 @@ public final class StockInfoEngine {
         if (upper.contains("ETF") || upper.contains("LOF") || upper.contains("REIT")
                 || name.contains("基金") || name.contains("转债")) {
             score += 3;
+        } else if (name.matches("^(沪深|上证|深证|中证|国证|创业板|科创)\\d{2,4}.*")) {
+            score -= 6;
         }
         if (name.length() >= 4) {
             score += 1;
@@ -339,8 +342,17 @@ public final class StockInfoEngine {
         }
         if (name.contains(":") || name.contains("：") || name.contains("%")
                 || name.contains("万") || name.contains("亿") || name.contains("元")
-                || name.contains(">") || name.contains("<")) {
+                || name.contains(">") || name.contains("<")
+                || name.contains(".") || name.contains("-") || name.contains("—")
+                || name.contains("+")) {
             return false;
+        }
+        if (name.length() > 0 && Character.isDigit(name.charAt(0))) {
+            String upper = name.toUpperCase(Locale.ROOT);
+            if (!upper.contains("ETF") && !upper.contains("LOF")
+                    && !upper.contains("REIT")) {
+                return false;
+            }
         }
         for (String excluded : NAME_EXCLUSIONS) {
             if (name.contains(excluded)) {
