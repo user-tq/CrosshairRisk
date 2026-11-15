@@ -119,7 +119,10 @@ final class OfflineScreenshotRecognizer {
                 int bottom = Math.min(height - 1, region.bottom + padding);
                 Bitmap crop = Bitmap.createBitmap(screenshot, left, top,
                         right - left + 1, bottom - top + 1);
-                Text text = read(recognizer, scaled(crop, 3), 10);
+                // 二值化：把蓝底白字转为黑字白底，并精确裁剪文字区域，提升 OCR 准确率
+                Bitmap binarized = binarizeText(crop);
+                crop.recycle();
+                Text text = read(recognizer, scaled(binarized, 3), 10);
                 if (text == null) {
                     priceError = "离线数字识别失败，请保持标签清晰后重试";
                 } else {
@@ -199,6 +202,78 @@ final class OfflineScreenshotRecognizer {
         } catch (RuntimeException error) {
             return bitmap;
         }
+    }
+
+    /**
+     * 将蓝底白字的价格标签转为黑字白底，并精确裁剪到文字区域。
+     * 文字像素亮度高，蓝色背景亮度低，用亮度阈值即可分离。
+     */
+    private static Bitmap binarizeText(Bitmap source) {
+        int w = source.getWidth();
+        int h = source.getHeight();
+        int[] pixels = new int[w * h];
+        source.getPixels(pixels, 0, w, 0, 0, w, h);
+
+        int[] bounds = binarizeAndFindTextBounds(pixels, w, h);
+        if (bounds == null) {
+            // 未找到文字像素，返回原图副本作为兜底
+            return source.copy(Bitmap.Config.ARGB_8888, false);
+        }
+
+        int pad = Math.max(2, (bounds[3] - bounds[1] + 1) / 4);
+        int cropLeft = Math.max(0, bounds[0] - pad);
+        int cropTop = Math.max(0, bounds[1] - pad);
+        int cropRight = Math.min(w - 1, bounds[2] + pad);
+        int cropBottom = Math.min(h - 1, bounds[3] + pad);
+
+        int cropW = cropRight - cropLeft + 1;
+        int cropH = cropBottom - cropTop + 1;
+        Bitmap result = Bitmap.createBitmap(cropW, cropH, Bitmap.Config.ARGB_8888);
+        result.setPixels(pixels, cropTop * w + cropLeft, w, 0, 0, cropW, cropH);
+        return result;
+    }
+
+    /**
+     * 原地二值化像素数组：亮度 > 140 的像素（白色文字）置为黑色，其余置为白色。
+     * 返回文字区域边界 [left, top, right, bottom]，无文字时返回 null。
+     * 可单独单元测试。
+     */
+    static int[] binarizeAndFindTextBounds(int[] pixels, int width, int height) {
+        int minX = width;
+        int minY = height;
+        int maxX = -1;
+        int maxY = -1;
+        for (int y = 0; y < height; y++) {
+            int row = y * width;
+            for (int x = 0; x < width; x++) {
+                int pixel = pixels[row + x];
+                int r = (pixel >> 16) & 0xff;
+                int g = (pixel >> 8) & 0xff;
+                int b = pixel & 0xff;
+                int lum = (r * 299 + g * 587 + b * 114) / 1000;
+                if (lum > 140) {
+                    pixels[row + x] = 0xFF000000;
+                    if (x < minX) {
+                        minX = x;
+                    }
+                    if (y < minY) {
+                        minY = y;
+                    }
+                    if (x > maxX) {
+                        maxX = x;
+                    }
+                    if (y > maxY) {
+                        maxY = y;
+                    }
+                } else {
+                    pixels[row + x] = 0xFFFFFFFF;
+                }
+            }
+        }
+        if (maxX < 0) {
+            return null;
+        }
+        return new int[]{minX, minY, maxX, maxY};
     }
 
     private Text read(TextRecognizer target, Bitmap input, int seconds) {
