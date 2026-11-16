@@ -1,15 +1,27 @@
 package com.crosshair.risk;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 
 /** Long-position 2R calculation. R is the risk per share from entry to stop. */
 public final class RiskCalculator {
+    /** 单笔最大亏损占总仓位的默认比例（百分比）。 */
+    public static final double DEFAULT_MAX_LOSS_PERCENT = 2.0;
+
     private RiskCalculator() {
     }
 
     public static Calculation calculate(String stopText, String buyText) {
+        return calculate(stopText, buyText, DEFAULT_MAX_LOSS_PERCENT);
+    }
+
+    public static Calculation calculate(String stopText, String buyText,
+                                        double maxLossPercent) {
         if (isBlank(stopText) || isBlank(buyText)) {
             throw new IllegalArgumentException("请先捕获止损价和买入价");
+        }
+        if (maxLossPercent <= 0 || maxLossPercent > 100) {
+            throw new IllegalArgumentException("最大亏损比例需在 0~100 之间");
         }
 
         final BigDecimal stop;
@@ -32,13 +44,17 @@ public final class RiskCalculator {
         BigDecimal profit = risk.multiply(BigDecimal.valueOf(2));
         BigDecimal target = buy.add(profit);
         BigDecimal breakEven = buy.add(risk);
+        // 仓位占比 = 最大亏损比例 × 买入价 ÷ 每股风险
+        double positionPercent = maxLossPercent
+                * buy.doubleValue() / risk.doubleValue();
         return new Calculation(
                 plain(stop, scale),
                 plain(buy, scale),
                 plain(risk, scale),
                 plain(profit, scale),
                 plain(target, scale),
-                plain(breakEven, scale)
+                plain(breakEven, scale),
+                String.format(Locale.ROOT, "%.1f", positionPercent)
         );
     }
 
@@ -57,15 +73,18 @@ public final class RiskCalculator {
         public final String profit;
         public final String target;
         public final String breakEven;
+        /** 按最大亏损比例计算出的可用仓位占比（百分比，已格式化）。 */
+        public final String positionPercent;
 
         Calculation(String stop, String buy, String risk, String profit, String target,
-                    String breakEven) {
+                    String breakEven, String positionPercent) {
             this.stop = stop;
             this.buy = buy;
             this.risk = risk;
             this.profit = profit;
             this.target = target;
             this.breakEven = breakEven;
+            this.positionPercent = positionPercent;
         }
     }
 }

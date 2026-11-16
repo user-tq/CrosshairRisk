@@ -9,6 +9,8 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -48,6 +50,12 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private boolean captureInFlight;
     private OfflineScreenshotRecognizer offlineRecognizer;
     private String lastForegroundPackage = "";
+    private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener =
+            (sharedPreferences, key) -> {
+                if (State.KEY_MAX_LOSS_PERCENT.equals(key)) {
+                    new Handler(Looper.getMainLooper()).post(this::renderPrices);
+                }
+            };
 
     public static CrosshairAccessibilityService getInstance() {
         return instance;
@@ -63,6 +71,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         instance = this;
         running = true;
         preferences = getSharedPreferences(State.PREFS, MODE_PRIVATE);
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         applyOverlayVisibility();
     }
@@ -300,7 +309,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                                float weight) {
         LinearLayout cell = Ui.vertical(this);
         cell.setGravity(Gravity.CENTER);
-        TextView labelView = Ui.text(this, "2R卖出 / 1R保本", labelSize, Ui.ACCENT);
+        TextView labelView = Ui.text(this, "2R卖出/1R保本/仓位", labelSize, Ui.ACCENT);
         labelView.setGravity(Gravity.CENTER);
         labelView.setSingleLine(true);
         cell.addView(labelView);
@@ -743,11 +752,16 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
         if (!stop.isEmpty() && !buy.isEmpty()) {
             try {
-                RiskCalculator.Calculation result = RiskCalculator.calculate(stop, buy);
+                float maxLoss = preferences.getFloat(State.KEY_MAX_LOSS_PERCENT,
+                        (float) RiskCalculator.DEFAULT_MAX_LOSS_PERCENT);
+                RiskCalculator.Calculation result =
+                        RiskCalculator.calculate(stop, buy, maxLoss);
                 targetValue.setText(result.target);
                 targetValue.setTextColor(Ui.ACCENT);
-                breakEvenValue.setText("保本 " + result.breakEven);
-                breakEvenValue.setTextColor(Ui.MUTED);
+                boolean overAllIn = Double.parseDouble(result.positionPercent) > 100;
+                breakEvenValue.setText("保本 " + result.breakEven + " · 仓 "
+                        + result.positionPercent + "%");
+                breakEvenValue.setTextColor(overAllIn ? Ui.DANGER : Ui.MUTED);
             } catch (IllegalArgumentException error) {
                 targetValue.setText("--");
                 targetValue.setTextColor(Ui.DANGER);
@@ -771,6 +785,9 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     @Override
     public void onDestroy() {
         captureInFlight = false;
+        if (preferences != null) {
+            preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener);
+        }
         if (offlineRecognizer != null) {
             offlineRecognizer.close();
             offlineRecognizer = null;

@@ -11,9 +11,12 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,6 +44,7 @@ public final class MainActivity extends Activity {
     private TextView backtestList;
     private Button overlayButton;
     private Button modeButton;
+    private EditText maxLossInput;
     private SharedPreferences preferences;
 
     @Override
@@ -100,10 +104,43 @@ public final class MainActivity extends Activity {
         quoteCard.addView(detail, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
         TextView formula = Ui.text(this,
-                "公式：卖出价 = 买入价 + 2 × (买入价 − 止损价)\n仅适用于止损价低于买入价的做多交易。",
+                "公式：卖出价 = 买入价 + 2 × (买入价 − 止损价)\n"
+                        + "可用仓位 = 最大亏损% × 买入价 ÷ (买入价 − 止损价)\n"
+                        + "仅适用于止损价低于买入价的做多交易。",
                 13, Ui.MUTED);
         quoteCard.addView(formula, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
+        TextView lossLabel = Ui.text(this, "单笔最大亏损占总仓位（%）", 13, Ui.MUTED);
+        quoteCard.addView(lossLabel, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 14, this));
+
+        LinearLayout lossRow = new LinearLayout(this);
+        lossRow.setGravity(Gravity.CENTER_VERTICAL);
+        maxLossInput = new EditText(this);
+        maxLossInput.setInputType(InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        maxLossInput.setSingleLine(true);
+        maxLossInput.setTextSize(15);
+        maxLossInput.setTextColor(Ui.WHITE);
+        maxLossInput.setHint("2");
+        maxLossInput.setHintTextColor(Ui.MUTED);
+        maxLossInput.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 10), 0);
+        maxLossInput.setBackground(Ui.outlined(Ui.BUTTON, Color.rgb(43, 53, 62), 10, this));
+        maxLossInput.setText(formatMaxLoss());
+        lossRow.addView(maxLossInput, new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1));
+
+        Button saveLoss = Ui.button(this, "保存", true);
+        saveLoss.setTextSize(13);
+        saveLoss.setMinHeight(0);
+        saveLoss.setMinimumHeight(0);
+        saveLoss.setOnClickListener(view -> saveMaxLossPercent());
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
+                Ui.dp(this, 76), Ui.dp(this, 42));
+        saveParams.leftMargin = Ui.dp(this, 8);
+        lossRow.addView(saveLoss, saveParams);
+        quoteCard.addView(lossRow, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
 
         Button clear = Ui.button(this, "清空已捕获价格", false);
         clear.setOnClickListener(view -> sendControl(State.ACTION_CLEAR));
@@ -162,8 +199,9 @@ public final class MainActivity extends Activity {
                 "1. 启用服务并显示悬浮窗。\n"
                         + "2. 打开通达信，长按 K 线调出十字光标。\n"
                         + "3. 分别点击“捕获止损”和“捕获买入”，浮窗会同时识别股票名称和代码。\n"
-                        + "4. 核对两个价格后，查看实时计算的 2R 卖出价。\n"
-                        + "5. 点击浮窗右上角“复制”，即可得到包含股票名称、代码、止损价、买入价和买入日期的记录。\n\n"
+                        + "4. 核对两个价格后，查看实时计算的 2R 卖出价和可用仓位。\n"
+                        + "5. 点击浮窗右上角“复制”，即可得到包含股票名称、代码、止损价、买入价和买入日期的记录。\n"
+                        + "6. 在“当前 2R 卖出价”卡片中设置单笔最大亏损占总仓位百分比（默认 2%），捕获止损与买入后浮窗会显示建议仓位。\n\n"
                         + "若提示无法识别，点击浮窗右下角“诊断”，再回本页查看元素结果。",
                 14, Ui.MUTED);
         helpCard.addView(steps, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -199,6 +237,35 @@ public final class MainActivity extends Activity {
                 Ui.dp(this, 18), Ui.dp(this, 18));
         card.setBackground(Ui.outlined(Ui.CARD, Color.rgb(43, 53, 62), 16, this));
         return card;
+    }
+
+    private float maxLossPercent() {
+        return preferences.getFloat(State.KEY_MAX_LOSS_PERCENT,
+                (float) RiskCalculator.DEFAULT_MAX_LOSS_PERCENT);
+    }
+
+    private String formatMaxLoss() {
+        String value = String.valueOf(maxLossPercent());
+        return value.endsWith(".0") ? value.substring(0, value.length() - 2) : value;
+    }
+
+    private void saveMaxLossPercent() {
+        String raw = maxLossInput.getText().toString().trim();
+        double value;
+        try {
+            value = Double.parseDouble(raw);
+        } catch (NumberFormatException error) {
+            Toast.makeText(this, "请输入 0~100 之间的数字", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (value <= 0 || value > 100) {
+            Toast.makeText(this, "最大亏损比例需在 0~100 之间", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        preferences.edit().putFloat(State.KEY_MAX_LOSS_PERCENT, (float) value).apply();
+        Toast.makeText(this, "已保存：单笔最大亏损 " + formatMaxLoss() + "%", Toast.LENGTH_SHORT)
+                .show();
+        refreshState();
     }
 
     private void copyDiagnostics() {
@@ -306,11 +373,18 @@ public final class MainActivity extends Activity {
 
         if (!stop.isEmpty() && !buy.isEmpty()) {
             try {
-                RiskCalculator.Calculation result = RiskCalculator.calculate(stop, buy);
+                RiskCalculator.Calculation result =
+                        RiskCalculator.calculate(stop, buy, maxLossPercent());
                 quote.setText(result.target);
                 quote.setTextColor(Ui.ACCENT);
+                boolean overAllIn = Double.parseDouble(result.positionPercent) > 100;
+                String positionLine = "可用仓位 " + result.positionPercent + "%"
+                        + (overAllIn
+                        ? "（超出可用资金）"
+                        : "（单笔最大亏损 " + formatMaxLoss() + "%）");
                 detail.setText(stockLine + "止损 " + result.stop + "  ·  买入 " + result.buy
                         + "\n每股风险 " + result.risk + "  ·  2R 收益 " + result.profit
+                        + "\n" + positionLine
                         + "\n" + message);
             } catch (IllegalArgumentException error) {
                 quote.setText("--");
