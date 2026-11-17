@@ -50,6 +50,17 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private boolean captureInFlight;
     private OfflineScreenshotRecognizer offlineRecognizer;
     private String lastForegroundPackage = "";
+    private final Handler monitorHandler = new Handler(Looper.getMainLooper());
+    private final Runnable monitorRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (running && preferences != null) {
+                new Thread(() -> AlertMonitor.runOnce(
+                        CrosshairAccessibilityService.this, preferences)).start();
+            }
+            monitorHandler.postDelayed(this, AlertMonitor.POLL_INTERVAL_MS);
+        }
+    };
     private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener =
             (sharedPreferences, key) -> {
                 if (State.KEY_MAX_LOSS_PERCENT.equals(key)) {
@@ -72,6 +83,9 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         running = true;
         preferences = getSharedPreferences(State.PREFS, MODE_PRIVATE);
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener);
+        AlertMonitor.ensureChannel(this);
+        monitorHandler.removeCallbacksAndMessages(null);
+        monitorHandler.postDelayed(monitorRunnable, AlertMonitor.POLL_INTERVAL_MS);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         applyOverlayVisibility();
     }
@@ -784,6 +798,8 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        running = false;
+        monitorHandler.removeCallbacksAndMessages(null);
         captureInFlight = false;
         if (preferences != null) {
             preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener);

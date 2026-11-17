@@ -1,12 +1,14 @@
 package com.crosshair.risk;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,15 +18,18 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class MainActivity extends Activity {
+    private static final int REQUEST_POST_NOTIFICATIONS = 42;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refresh = new Runnable() {
         @Override
@@ -45,6 +50,7 @@ public final class MainActivity extends Activity {
     private Button overlayButton;
     private Button modeButton;
     private EditText maxLossInput;
+    private LinearLayout alertList;
     private SharedPreferences preferences;
 
     @Override
@@ -146,6 +152,30 @@ public final class MainActivity extends Activity {
         clear.setOnClickListener(view -> sendControl(State.ACTION_CLEAR));
         quoteCard.addView(clear, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
+        LinearLayout alertCard = card();
+        content.addView(alertCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 16, this));
+        alertCard.addView(Ui.bold(this, "价格监控清单", 16, Ui.WHITE));
+        alertCard.addView(Ui.text(this,
+                "勾选后联网实时监控行情。价格达到目标时发系统通知，提示一次后自动取消勾选。"
+                        + "价格从新浪行情接口获取，每 30 秒轮询一次。",
+                12, Ui.MUTED), Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 6, this));
+
+        Button addFromCapture = Ui.button(this, "＋ 从已捕获股票添加", true);
+        addFromCapture.setOnClickListener(view -> addAlertFromCapture());
+        alertCard.addView(addFromCapture, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 12, this));
+
+        Button addBlank = Ui.button(this, "＋ 新建空条目", false);
+        addBlank.setOnClickListener(view -> addBlankAlert());
+        alertCard.addView(addBlank, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 8, this));
+
+        alertList = Ui.vertical(this);
+        alertCard.addView(alertList, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 10, this));
 
         LinearLayout backtestCard = card();
         content.addView(backtestCard, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -266,6 +296,264 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, "已保存：单笔最大亏损 " + formatMaxLoss() + "%", Toast.LENGTH_SHORT)
                 .show();
         refreshState();
+    }
+
+    // ---------- 价格监控清单 ----------
+
+    private void addAlertFromCapture() {
+        String name = preferences.getString(State.KEY_NAME, "");
+        String code = preferences.getString(State.KEY_CODE, "");
+        if (name.isEmpty() && code.isEmpty()) {
+            Toast.makeText(this, "请先在通达信中捕获股票", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String buy = preferences.getString(State.KEY_BUY, "");
+        double defaultPrice;
+        try {
+            defaultPrice = Double.parseDouble(buy);
+        } catch (NumberFormatException error) {
+            defaultPrice = 0;
+        }
+        AlertItem item = new AlertItem(name, code, defaultPrice,
+                AlertItem.DIR_ABOVE, false, "");
+        editAlertItem(item, true);
+    }
+
+    private void addBlankAlert() {
+        AlertItem item = new AlertItem("", "", 0, AlertItem.DIR_ABOVE, false, "");
+        editAlertItem(item, true);
+    }
+
+    private void editAlertItem(AlertItem item, boolean isNew) {
+        LinearLayout container = Ui.vertical(this);
+        container.setPadding(Ui.dp(this, 16), Ui.dp(this, 10),
+                Ui.dp(this, 16), Ui.dp(this, 10));
+
+        EditText nameInput = labeledEdit(container, "股票名称", 180);
+        nameInput.setText(item.name);
+
+        EditText codeInput = labeledEdit(container, "股票代码（6 位）", 180);
+        codeInput.setText(item.code);
+
+        EditText priceInput = labeledEdit(container, "目标价", 180);
+        priceInput.setInputType(InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if (item.targetPrice > 0) {
+            priceInput.setText(String.valueOf(item.targetPrice));
+        }
+
+        LinearLayout dirRow = new LinearLayout(this);
+        dirRow.setGravity(Gravity.CENTER_VERTICAL);
+        dirRow.addView(Ui.text(this, "触发方向  ", 14, Ui.MUTED));
+        CheckBox aboveBox = new CheckBox(this);
+        aboveBox.setText("≥ 目标价");
+        aboveBox.setTextColor(Ui.WHITE);
+        aboveBox.setChecked(AlertItem.DIR_ABOVE.equals(item.direction));
+        CheckBox belowBox = new CheckBox(this);
+        belowBox.setText("≤ 目标价");
+        belowBox.setTextColor(Ui.WHITE);
+        belowBox.setChecked(AlertItem.DIR_BELOW.equals(item.direction));
+        aboveBox.setOnCheckedChangeListener((buttonView, checked) -> {
+            if (checked) {
+                belowBox.setChecked(false);
+            }
+        });
+        belowBox.setOnCheckedChangeListener((buttonView, checked) -> {
+            if (checked) {
+                aboveBox.setChecked(false);
+            }
+        });
+        dirRow.addView(aboveBox);
+        dirRow.addView(belowBox);
+        container.addView(dirRow);
+
+        LinearLayout enabledRow = new LinearLayout(this);
+        enabledRow.setGravity(Gravity.CENTER_VERTICAL);
+        enabledRow.addView(Ui.text(this, "勾选监控  ", 14, Ui.MUTED));
+        CheckBox enabledBox = new CheckBox(this);
+        enabledBox.setText("实时监控（勾选后联网轮询）");
+        enabledBox.setTextColor(Ui.WHITE);
+        enabledBox.setChecked(item.enabled);
+        enabledRow.addView(enabledBox);
+        container.addView(enabledRow);
+
+        EditText noteInput = labeledEdit(container, "备注", 180);
+        noteInput.setText(item.note);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(isNew ? "新增监控条目" : "编辑监控条目")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> {
+                    String newName = nameInput.getText().toString().trim();
+                    String newCode = codeInput.getText().toString().trim();
+                    double newPrice;
+                    try {
+                        newPrice = Double.parseDouble(priceInput.getText().toString().trim());
+                    } catch (NumberFormatException error) {
+                        Toast.makeText(this, "目标价格式无效", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (newCode.length() != 6) {
+                        Toast.makeText(this, "股票代码须为 6 位", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    String newDir = aboveBox.isChecked()
+                            ? AlertItem.DIR_ABOVE : AlertItem.DIR_BELOW;
+                    String newNote = noteInput.getText().toString().trim();
+                    boolean newEnabled = enabledBox.isChecked();
+                    AlertItem saved = new AlertItem(
+                            item.id, newName, newCode, newPrice, newDir,
+                            newEnabled, newNote, item.createdAt);
+                    saveAlertItem(saved, isNew);
+                    if (newEnabled) {
+                        requestNotificationsIfNeeded();
+                    }
+                    refreshState();
+                });
+        builder.show();
+    }
+
+    private EditText labeledEdit(LinearLayout container, String label, int inputMinHeight) {
+        TextView labelView = Ui.text(this, label, 14, Ui.MUTED);
+        container.addView(labelView);
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextSize(15);
+        input.setTextColor(Ui.WHITE);
+        input.setPadding(Ui.dp(this, 10), Ui.dp(this, 6),
+                Ui.dp(this, 10), Ui.dp(this, 6));
+        input.setBackground(Ui.outlined(Ui.BUTTON, Color.rgb(43, 53, 62), 8, this));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Ui.dp(this, 4);
+        params.bottomMargin = Ui.dp(this, 12);
+        container.addView(input, params);
+        return input;
+    }
+
+    private void saveAlertItem(AlertItem item, boolean isNew) {
+        List<AlertItem> items = AlertItem.parse(
+                preferences.getString(State.KEY_ALERTS, ""));
+        if (isNew) {
+            items.add(item);
+        } else {
+            int index = -1;
+            for (int i = 0; i < items.size(); i++) {
+                if (item.id.equals(items.get(i).id)) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index >= 0) {
+                items.set(index, item);
+            } else {
+                items.add(item);
+            }
+        }
+        preferences.edit().putString(State.KEY_ALERTS, AlertItem.serialize(items))
+                .apply();
+    }
+
+    private void deleteAlertItem(AlertItem item) {
+        List<AlertItem> items = AlertItem.parse(
+                preferences.getString(State.KEY_ALERTS, ""));
+        List<AlertItem> kept = new ArrayList<>();
+        for (AlertItem existing : items) {
+            if (!existing.id.equals(item.id)) {
+                kept.add(existing);
+            }
+        }
+        preferences.edit().putString(State.KEY_ALERTS, AlertItem.serialize(kept))
+                .apply();
+        refreshState();
+    }
+
+    private void renderAlertList() {
+        if (alertList == null) {
+            return;
+        }
+        alertList.removeAllViews();
+        List<AlertItem> items = AlertItem.parse(
+                preferences.getString(State.KEY_ALERTS, ""));
+        if (items.isEmpty()) {
+            TextView empty = Ui.text(this,
+                    "暂无监控条目。先在通达信中捕获股票，再点击“＋ 从已捕获股票添加”。",
+                    13, Ui.MUTED);
+            alertList.addView(empty);
+            return;
+        }
+        for (AlertItem item : items) {
+            alertList.addView(buildAlertRow(item), Ui.params(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 6, this));
+        }
+    }
+
+    private View buildAlertRow(AlertItem item) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(Ui.outlined(Ui.BUTTON, Color.rgb(43, 53, 62), 10, this));
+        row.setPadding(Ui.dp(this, 10), Ui.dp(this, 8), Ui.dp(this, 10), Ui.dp(this, 8));
+
+        CheckBox checkBox = new CheckBox(this);
+        checkBox.setChecked(item.enabled);
+        checkBox.setOnCheckedChangeListener((buttonView, checked) -> {
+            saveAlertItem(item.withEnabled(checked), false);
+            if (checked) {
+                requestNotificationsIfNeeded();
+            }
+            refreshState();
+        });
+        row.addView(checkBox, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout mid = Ui.vertical(this);
+        mid.setGravity(Gravity.CENTER_VERTICAL);
+
+        String cond = AlertItem.DIR_ABOVE.equals(item.direction) ? "≥" : "≤";
+        TextView title = Ui.text(this,
+                item.display() + "   目标 " + cond + " " + item.targetPrice,
+                14, item.enabled ? Ui.WHITE : Ui.MUTED);
+        mid.addView(title);
+
+        if (!item.note.isEmpty()) {
+            TextView note = Ui.text(this, item.note, 12, Ui.MUTED);
+            mid.addView(note);
+        }
+
+        row.addView(mid, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView editBtn = Ui.text(this, "编辑", 13, Ui.ACCENT);
+        editBtn.setPadding(Ui.dp(this, 8), 0, 0, 0);
+        editBtn.setOnClickListener(view -> editAlertItem(item, false));
+        row.addView(editBtn);
+
+        TextView delBtn = Ui.text(this, "删除", 13, Ui.DANGER);
+        delBtn.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        delBtn.setOnClickListener(view -> new AlertDialog.Builder(this)
+                .setTitle("删除监控")
+                .setMessage("确定删除 " + item.display() + " 吗？")
+                .setPositiveButton("删除", (d, w) -> deleteAlertItem(item))
+                .setNegativeButton("取消", null)
+                .show());
+        row.addView(delBtn);
+
+        row.setOnClickListener(view -> editAlertItem(item, false));
+        return row;
+    }
+
+    private void requestNotificationsIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                        REQUEST_POST_NOTIFICATIONS);
+            }
+        }
+        AlertMonitor.ensureChannel(this);
     }
 
     private void copyDiagnostics() {
@@ -419,6 +707,8 @@ public final class MainActivity extends Activity {
                 + " · 平均R " + stats.averageR);
         backtestList.setText(entries.isEmpty()
                 ? "暂无回测记录" : BacktestLog.export(entries, name, code));
+
+        renderAlertList();
     }
 
     @Override

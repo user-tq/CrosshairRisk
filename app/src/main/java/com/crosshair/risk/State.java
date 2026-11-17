@@ -17,6 +17,7 @@ final class State {
     static final String KEY_MODE = "app_mode";
     static final String KEY_BACKTEST_LOG = "backtest_log";
     static final String KEY_MAX_LOSS_PERCENT = "max_loss_percent";
+    static final String KEY_ALERTS = "alerts";
 
     static final String ACTION_TOGGLE = "com.crosshair.risk.action.TOGGLE";
     static final String ACTION_CLEAR = "com.crosshair.risk.action.CLEAR";
