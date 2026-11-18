@@ -24,7 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 价格监控：从新浪行情接口拉取实时价，对已启用的监控条目判断触发条件，
+ * 价格监控：从腾讯行情接口拉取实时价，对已启用的监控条目判断触发条件，
  * 满足则发系统通知，并将该条目标记为已触发（enabled=false）。
  */
 final class AlertMonitor {
@@ -32,9 +32,10 @@ final class AlertMonitor {
     static final String CHANNEL_NAME = "价格监控";
     /** 轮询间隔（毫秒）。 */
     static final long POLL_INTERVAL_MS = 30_000L;
-    private static final String SINA_URL = "https://hq.sinajs.cn/list=";
+    private static final String QUOTE_URL = "https://qt.gtimg.cn/q=";
+    private static final String QUOTE_REFERER = "https://gu.qq.com/";
     private static final Pattern PRICE_PATTERN = Pattern.compile(
-            "var\\s+hq_str_([a-z]\\d+)=\"(.*?)\";", Pattern.DOTALL);
+            "v_([a-z]{2}\\d+)=\"(.*?)\";", Pattern.DOTALL);
     private static final Charset GBK = Charset.forName("GBK");
 
     private AlertMonitor() {
@@ -100,7 +101,7 @@ final class AlertMonitor {
                 updated.add(item);
                 continue;
             }
-            Double price = prices.get(item.sinaSymbol());
+            Double price = prices.get(item.marketSymbol());
             if (price == null || price <= 0) {
                 updated.add(item);
                 continue;
@@ -126,7 +127,7 @@ final class AlertMonitor {
         Map<String, Double> prices = new HashMap<>();
         List<String> symbols = new ArrayList<>();
         for (AlertItem item : items) {
-            String sym = item.sinaSymbol();
+            String sym = item.marketSymbol();
             if (!sym.isEmpty() && !symbols.contains(sym)) {
                 symbols.add(sym);
             }
@@ -135,26 +136,29 @@ final class AlertMonitor {
             return prices;
         }
         String joined = String.join(",", symbols);
-        String body = httpGet(SINA_URL + joined, "finance.sina.com.cn");
+        String body = httpGet(QUOTE_URL + joined, QUOTE_REFERER);
+        return parseQuotes(body);
+    }
+
+    /** 解析腾讯行情响应，返回 symbol → price 的映射。 */
+    static Map<String, Double> parseQuotes(String body) {
+        Map<String, Double> prices = new HashMap<>();
         if (body == null || body.isEmpty()) {
             return prices;
         }
         Matcher matcher = PRICE_PATTERN.matcher(body);
         while (matcher.find()) {
-            String symbol = matcher.group(1);
-            String fields = matcher.group(2);
-            double price = parsePriceField(fields);
-            prices.put(symbol, price);
+            prices.put(matcher.group(1), parsePriceField(matcher.group(2)));
         }
         return prices;
     }
 
-    /** 逗号分割的字段串，取第 3 字段（index 3）为最新价。 */
+    /** 腾讯行情以 ~ 分割字段，第 4 个字段（index 3）为最新价。 */
     static double parsePriceField(String fields) {
         if (fields == null || fields.isEmpty()) {
             return 0;
         }
-        String[] parts = fields.split(",", -1);
+        String[] parts = fields.split("~", -1);
         if (parts.length <= 3) {
             return 0;
         }

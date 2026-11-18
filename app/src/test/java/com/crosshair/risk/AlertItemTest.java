@@ -34,19 +34,19 @@ public final class AlertItemTest {
     }
 
     @Test
-    public void sinaSymbolPrefixesByFirstDigit() {
+    public void marketSymbolPrefixesByFirstDigit() {
         assertEquals("sh600519", new AlertItem("", "600519", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
         assertEquals("sz000001", new AlertItem("", "000001", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
         assertEquals("sz159892", new AlertItem("", "159892", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
         assertEquals("sz300750", new AlertItem("", "300750", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
         assertEquals("bj830799", new AlertItem("", "830799", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
         assertEquals("", new AlertItem("", "", 0,
-                AlertItem.DIR_ABOVE, false, "").sinaSymbol());
+                AlertItem.DIR_ABOVE, false, "").marketSymbol());
     }
 
     @Test
@@ -70,19 +70,20 @@ public final class AlertItemTest {
     }
 
     @Test
-    public void parsesSinaResponse() {
-        AlertItem item = new AlertItem("", "600519", 0, AlertItem.DIR_ABOVE, false, "");
-        Map<String, Double> prices = AlertMonitor.fetchPrices(Arrays.asList(item));
-        // 联网测试在沙箱里跳过，只验证解析逻辑独立可测
-        assertEquals(1705.0,
-                AlertMonitor.parsePriceField("贵州茅台,1700.00,1698.50,1705.00,1710.00,1690.00,1700.00,1702.00"),
-                0.01);
-        assertNotNull(prices);
+    public void parsesTencentResponse() {
+        String body = "v_sh600519=\"1~贵州茅台~600519~1705.00~1700.00~1698.50~100\";\n"
+                + "v_sz000001=\"51~平安银行~000001~12.19~12.25~12.24~100\";\n"
+                + "v_bj920002=\"62~万达轴承~920002~45.56~46.16~46.16~100\";";
+        Map<String, Double> prices = AlertMonitor.parseQuotes(body);
+        assertEquals(1705.0, prices.get("sh600519"), 0.01);
+        assertEquals(12.19, prices.get("sz000001"), 0.01);
+        assertEquals(45.56, prices.get("bj920002"), 0.01);
     }
 
     @Test
     public void parsePriceFieldReturnsZeroForStale() {
-        assertEquals(0, AlertMonitor.parsePriceField(",,0,,0,0"), 0.01);
-        assertEquals(1700.5, AlertMonitor.parsePriceField("贵州茅台,1700,1699,1700.5,1700,1700,1700,1700"), 0.01);
+        assertEquals(0, AlertMonitor.parsePriceField("1~名称~代码~0.00~0.00"), 0.01);
+        assertEquals(1700.5, AlertMonitor.parsePriceField("1~名称~代码~1700.5~1700"), 0.01);
+        assertEquals(0, AlertMonitor.parsePriceField(""), 0.01);
     }
 }

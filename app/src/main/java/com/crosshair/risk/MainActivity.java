@@ -159,7 +159,7 @@ public final class MainActivity extends Activity {
         alertCard.addView(Ui.bold(this, "价格监控清单", 16, Ui.WHITE));
         alertCard.addView(Ui.text(this,
                 "勾选后联网实时监控行情。价格达到目标时发系统通知，提示一次后自动取消勾选。"
-                        + "价格从新浪行情接口获取，每 30 秒轮询一次。",
+                        + "价格从腾讯行情接口获取，每 30 秒轮询一次。",
                 12, Ui.MUTED), Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 6, this));
 
