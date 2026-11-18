@@ -33,8 +33,9 @@ final class AlertMonitor {
     /** 轮询间隔（毫秒）。 */
     static final long POLL_INTERVAL_MS = 30_000L;
     private static final String SINA_URL = "https://hq.sinajs.cn/list=";
+    private static final String SINA_REFERER = "https://finance.sina.com.cn";
     private static final Pattern PRICE_PATTERN = Pattern.compile(
-            "var\\s+hq_str_([a-z]\\d+)=\"(.*?)\";", Pattern.DOTALL);
+            "var\\s+hq_str_([a-z]{2}\\d+)=\"(.*?)\";", Pattern.DOTALL);
     private static final Charset GBK = Charset.forName("GBK");
 
     private AlertMonitor() {
@@ -135,7 +136,7 @@ final class AlertMonitor {
             return prices;
         }
         String joined = String.join(",", symbols);
-        String body = httpGet(SINA_URL + joined, "finance.sina.com.cn");
+        String body = httpGet(SINA_URL + joined, SINA_REFERER);
         if (body == null || body.isEmpty()) {
             return prices;
         }
