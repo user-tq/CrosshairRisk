@@ -314,8 +314,28 @@ public final class MainActivity extends Activity {
         } catch (NumberFormatException error) {
             defaultPrice = 0;
         }
+
+        // 根据已捕获的止损价 / 买入价，把关键指标预填到备注里。
+        StringBuilder note = new StringBuilder();
+        String stop = preferences.getString(State.KEY_STOP, "");
+        if (!stop.isEmpty()) {
+            note.append("止损 ").append(stop).append("\n");
+        }
+        if (!stop.isEmpty() && !buy.isEmpty()) {
+            try {
+                RiskCalculator.Calculation calc = RiskCalculator.calculate(
+                        stop, buy, maxLossPercent());
+                note.append("2R卖出 ").append(calc.target).append("\n");
+                note.append("1R保本 ").append(calc.breakEven).append("\n");
+                note.append("可用仓位 ").append(calc.positionPercent).append("%");
+            } catch (IllegalArgumentException ignored) {
+                // 止损价 ≥ 买入价或格式异常，跳过 2R 相关字段，只保留已知价格。
+            }
+        }
+        String savedNote = note.toString();
+
         AlertItem item = new AlertItem(name, code, defaultPrice,
-                AlertItem.DIR_ABOVE, false, "");
+                AlertItem.DIR_ABOVE, false, savedNote);
         editAlertItem(item, true);
     }
 
