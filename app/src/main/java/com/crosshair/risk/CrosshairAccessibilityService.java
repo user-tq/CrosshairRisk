@@ -47,6 +47,8 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     private TextView statusValue;
     private boolean collapsed;
     private boolean backtest;
+    /** 展开状态下悬浮窗的完整宽度（像素）。 */
+    private int expandedWidth;
     private boolean captureInFlight;
     private OfflineScreenshotRecognizer offlineRecognizer;
     private String lastForegroundPackage = "";
@@ -282,6 +284,16 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
             overlayBody.setVisibility(collapsed ? View.GONE : View.VISIBLE);
             collapse.setText(collapsed ? "＋" : "－");
             collapse.setContentDescription(collapsed ? "展开悬浮窗" : "收起悬浮窗");
+            if (overlayParams != null && overlayView != null && windowManager != null) {
+                overlayParams.width = collapsed
+                        ? ViewGroup.LayoutParams.WRAP_CONTENT
+                        : expandedWidth;
+                try {
+                    windowManager.updateViewLayout(overlayView, overlayParams);
+                } catch (IllegalArgumentException ignored) {
+                    // The window may already have been removed by the system.
+                }
+            }
         });
         close.setOnClickListener(view -> {
             preferences.edit().putBoolean(State.KEY_VISIBLE, false).apply();
@@ -289,9 +301,9 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         });
         enableDragging(container);
 
-        int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 12);
+        expandedWidth = getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 12);
         overlayParams = new WindowManager.LayoutParams(
-                width,
+                collapsed ? ViewGroup.LayoutParams.WRAP_CONTENT : expandedWidth,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -650,8 +662,11 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (overlayView != null && overlayParams != null && windowManager != null) {
-            overlayParams.width = getResources().getDisplayMetrics().widthPixels
+            expandedWidth = getResources().getDisplayMetrics().widthPixels
                     - Ui.dp(this, 12);
+            if (!collapsed) {
+                overlayParams.width = expandedWidth;
+            }
             overlayParams.y = Ui.dp(this, 12);
             try {
                 windowManager.updateViewLayout(overlayView, overlayParams);
