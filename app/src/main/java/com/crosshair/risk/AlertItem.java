@@ -61,11 +61,11 @@ final class AlertItem {
         return (name.isEmpty() ? code : name + (code.isEmpty() ? "" : " " + code));
     }
 
-    /** 代码 → 新浪行情前缀。
-     * 6/9/5/7x → sh（沪市），0/1/2/3 → sz（深市），4/8 → bj（北交所）。
+    /** 代码 → 腾讯行情前缀。
+     * 6/9/5 → sh（沪市），0/1/2/3 → sz（深市），4/8 → bj（北交所）。
      * ETF 159xxx（深）、51xxxx（沪）已按首数字正确归入。
      */
-    String sinaSymbol() {
+    String marketSymbol() {
         if (code == null || code.length() == 0) {
             return "";
         }
