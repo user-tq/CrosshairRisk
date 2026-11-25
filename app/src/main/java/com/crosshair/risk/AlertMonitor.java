@@ -16,6 +16,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +35,10 @@ final class AlertMonitor {
     static final long POLL_INTERVAL_MS = 30_000L;
     private static final String QUOTE_URL = "https://qt.gtimg.cn/q=";
     private static final String QUOTE_REFERER = "https://gu.qq.com/";
+    /** 5 分钟K线周期（毫秒）。 */
+    static final long BAR_INTERVAL_MS = 5 * 60 * 1000L;
+    /** 收盘后再等 2 秒取价，确保行情已更新到该根K线的收盘价。 */
+    private static final long BAR_CLOSE_DELAY_MS = 2_000L;
     private static final Pattern PRICE_PATTERN = Pattern.compile(
             "v_([a-z]{2}\\d+)=\"(.*?)\";", Pattern.DOTALL);
     private static final Charset GBK = Charset.forName("GBK");
@@ -73,11 +78,49 @@ final class AlertMonitor {
         return info != null && info.isConnected();
     }
 
+    /** 是否只按 5 分钟K线收盘价判断。 */
+    static boolean fiveMinCloseOnly(SharedPreferences prefs) {
+        return prefs != null && prefs.getBoolean(State.KEY_FIVE_MIN_CLOSE_ONLY, false);
+    }
+
+    /** 距离下一根 5 分钟K线收盘（含 2 秒缓冲）的毫秒数。 */
+    static long millisUntilNextBarClose(long nowMillis) {
+        long floor = Math.floorDiv(nowMillis, BAR_INTERVAL_MS) * BAR_INTERVAL_MS;
+        long next = floor + BAR_INTERVAL_MS + BAR_CLOSE_DELAY_MS;
+        long delay = next - nowMillis;
+        if (delay <= 0) {
+            delay = BAR_INTERVAL_MS;
+        }
+        return delay;
+    }
+
+    /** 是否处于 A 股交易时段（周一至周五 09:30–11:30、13:00–15:00）。 */
+    static boolean isTradingSession(Calendar cal) {
+        int day = cal.get(Calendar.DAY_OF_WEEK);
+        if (day == Calendar.SATURDAY || day == Calendar.SUNDAY) {
+            return false;
+        }
+        int minutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+        return (minutes >= 9 * 60 + 30 && minutes <= 11 * 60 + 30)
+                || (minutes >= 13 * 60 && minutes <= 15 * 60);
+    }
+
+    static boolean isTradingSession(long nowMillis) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(nowMillis);
+        return isTradingSession(cal);
+    }
+
     /**
      * 执行一次监控扫描。返回本轮处理过程中尝试发送的通知数。
      */
     static int runOnce(Context context, SharedPreferences prefs) {
         if (!hasNetwork(context)) {
+            return 0;
+        }
+        boolean barClose = fiveMinCloseOnly(prefs);
+        if (barClose && !isTradingSession(System.currentTimeMillis())) {
+            // 5 分钟K线模式只在交易时段判断，避免用停盘旧价误触发。
             return 0;
         }
         List<AlertItem> items = AlertItem.parse(prefs.getString(State.KEY_ALERTS, ""));
@@ -107,7 +150,7 @@ final class AlertMonitor {
                 continue;
             }
             if (item.triggers(price)) {
-                sendNotification(context, item, price);
+                sendNotification(context, item, price, barClose);
                 notified++;
                 // 触发后退出勾选
                 updated.add(item.withEnabled(false));
@@ -170,7 +213,8 @@ final class AlertMonitor {
         }
     }
 
-    static void sendNotification(Context context, AlertItem item, double price) {
+    static void sendNotification(Context context, AlertItem item, double price,
+                                 boolean barClose) {
         NotificationManager nm = (NotificationManager)
                 context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -178,9 +222,10 @@ final class AlertMonitor {
         }
         String condition = AlertItem.DIR_ABOVE.equals(item.direction)
                 ? "≥" : "≤";
+        String source = barClose ? "5分钟收盘" : "当前";
         String text = String.format(Locale.ROOT,
-                "当前 %.3f %s 目标 %.3f",
-                price, condition, item.targetPrice);
+                "%s %.3f %s 目标 %.3f",
+                source, price, condition, item.targetPrice);
         if (!item.note.isEmpty()) {
             text = text + "  ·  " + item.note;
         }
@@ -189,7 +234,7 @@ final class AlertMonitor {
                 : new Notification.Builder(context);
         Notification notification = builder
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("价格提醒 · " + item.display())
+                .setContentTitle((barClose ? "5分K提醒 · " : "价格提醒 · ") + item.display())
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setAutoCancel(true)

@@ -158,10 +158,32 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 16, this));
         alertCard.addView(Ui.bold(this, "价格监控清单", 16, Ui.WHITE));
         alertCard.addView(Ui.text(this,
-                "勾选后联网实时监控行情。价格达到目标时发系统通知，提示一次后自动取消勾选。"
-                        + "价格从腾讯行情接口获取，每 30 秒轮询一次。",
+                "勾选后联网监控行情。达到目标时发系统通知，提示一次后自动取消勾选。"
+                        + "价格从腾讯行情接口获取。",
                 12, Ui.MUTED), Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 6, this));
+
+        CheckBox fiveMinBox = new CheckBox(this);
+        fiveMinBox.setText("只按 5 分钟K线收盘价判断");
+        fiveMinBox.setTextColor(Ui.WHITE);
+        fiveMinBox.setTextSize(14);
+        fiveMinBox.setChecked(preferences.getBoolean(
+                State.KEY_FIVE_MIN_CLOSE_ONLY, false));
+        fiveMinBox.setOnCheckedChangeListener((buttonView, checked) -> {
+            preferences.edit()
+                    .putBoolean(State.KEY_FIVE_MIN_CLOSE_ONLY, checked).apply();
+            Toast.makeText(this, checked
+                    ? "已开启：每根 5 分钟K线收盘后 2 秒判断"
+                    : "已关闭：每 30 秒按实时价判断", Toast.LENGTH_SHORT).show();
+            renderAlertList();
+        });
+        alertCard.addView(fiveMinBox, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 4, this));
+        alertCard.addView(Ui.text(this,
+                "开启后只在交易时段（09:30–11:30、13:00–15:00）的 5 分钟K线收盘时取收盘价判断，"
+                        + "避免盘中跳动误触发；关闭则每 30 秒按实时价判断。",
+                11, Ui.MUTED), Ui.params(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 2, this));
 
         Button addFromCapture = Ui.button(this, "＋ 从已捕获股票添加", true);
         addFromCapture.setOnClickListener(view -> addAlertFromCapture());
@@ -532,8 +554,11 @@ public final class MainActivity extends Activity {
         mid.setGravity(Gravity.CENTER_VERTICAL);
 
         String cond = AlertItem.DIR_ABOVE.equals(item.direction) ? "≥" : "≤";
+        boolean fiveMinMode = preferences.getBoolean(
+                State.KEY_FIVE_MIN_CLOSE_ONLY, false);
+        String modeSuffix = fiveMinMode && item.enabled ? "  · 5分K收盘判断" : "";
         TextView title = Ui.text(this,
-                item.display() + "   目标 " + cond + " " + item.targetPrice,
+                item.display() + "   目标 " + cond + " " + item.targetPrice + modeSuffix,
                 14, item.enabled ? Ui.WHITE : Ui.MUTED);
         mid.addView(title);
 

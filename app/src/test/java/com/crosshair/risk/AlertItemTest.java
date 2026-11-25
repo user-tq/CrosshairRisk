@@ -3,17 +3,60 @@ package com.crosshair.risk;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public final class AlertItemTest {
+    @Test
+    public void nextBarCloseAlignsToFiveMinuteBoundary() {
+        // 10:00:00.000（整 5 分钟）→ 下一根收盘在 10:05:02，延迟 302 秒
+        assertEquals(302_000L,
+                AlertMonitor.millisUntilNextBarClose(0L));
+        // 10:04:59 → 还有 3 秒
+        assertEquals(3_000L,
+                AlertMonitor.millisUntilNextBarClose(299_000L));
+        // 正好在 10:05:02 → 顺延到下一根
+        assertEquals(300_000L,
+                AlertMonitor.millisUntilNextBarClose(302_000L));
+    }
+
+    @Test
+    public void tradingSessionCoversMorningAndAfternoon() {
+        TimeZone shanghai = TimeZone.getTimeZone("Asia/Shanghai");
+        assertTrue(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 9, 30)));
+        assertTrue(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 11, 30)));
+        assertTrue(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 13, 0)));
+        assertTrue(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 15, 0)));
+        // 午休与盘前盘后
+        assertFalse(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 12, 0)));
+        assertFalse(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 9, 29)));
+        assertFalse(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                17, 15, 1)));
+        // 周末
+        assertFalse(AlertMonitor.isTradingSession(at(shanghai, 2026, Calendar.NOVEMBER,
+                21, 10, 0)));
+    }
+
+    private static Calendar at(TimeZone zone, int year, int month, int day,
+                              int hour, int minute) {
+        Calendar cal = Calendar.getInstance(zone);
+        cal.set(year, month, day, hour, minute, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal;
+    }
     @Test
     public void serializesAndParsesRoundTrip() {
         AlertItem item = new AlertItem("贵州茅台", "600519", 1700.0,

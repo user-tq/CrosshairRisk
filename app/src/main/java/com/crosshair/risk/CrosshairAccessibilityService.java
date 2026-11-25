@@ -60,15 +60,33 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
                 new Thread(() -> AlertMonitor.runOnce(
                         CrosshairAccessibilityService.this, preferences)).start();
             }
-            monitorHandler.postDelayed(this, AlertMonitor.POLL_INTERVAL_MS);
+            scheduleNextMonitor();
         }
     };
     private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener =
             (sharedPreferences, key) -> {
                 if (State.KEY_MAX_LOSS_PERCENT.equals(key)) {
                     new Handler(Looper.getMainLooper()).post(this::renderPrices);
+                } else if (State.KEY_FIVE_MIN_CLOSE_ONLY.equals(key)) {
+                    // 切换 5 分钟K线模式后立即重排轮询节奏
+                    monitorHandler.post(this::rescheduleMonitor);
                 }
             };
+
+    private void scheduleNextMonitor() {
+        long delay = AlertMonitor.POLL_INTERVAL_MS;
+        if (preferences != null && AlertMonitor.fiveMinCloseOnly(preferences)) {
+            delay = AlertMonitor.millisUntilNextBarClose(System.currentTimeMillis());
+        }
+        monitorHandler.removeCallbacks(monitorRunnable);
+        monitorHandler.postDelayed(monitorRunnable, delay);
+    }
+
+    private void rescheduleMonitor() {
+        if (running) {
+            scheduleNextMonitor();
+        }
+    }
 
     public static CrosshairAccessibilityService getInstance() {
         return instance;
@@ -87,7 +105,7 @@ public final class CrosshairAccessibilityService extends AccessibilityService {
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener);
         AlertMonitor.ensureChannel(this);
         monitorHandler.removeCallbacksAndMessages(null);
-        monitorHandler.postDelayed(monitorRunnable, AlertMonitor.POLL_INTERVAL_MS);
+        scheduleNextMonitor();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         applyOverlayVisibility();
     }
